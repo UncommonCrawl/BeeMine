@@ -1,0 +1,22 @@
+{
+  "name": "beemine",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Static web app powered by Vite.",
+  "scripts": {
+    "dev": "vite --host localhost --port 5173",
+    "start": "npm run dev",
+    "build": "vite build",
+    "preview": "vite preview --host localhost --port 4173",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^5.4.19",
+    "vitest": "^4.0.18"
+  }
+}
