@@ -20,10 +20,16 @@ const SHUFFLE_MAP_ID = "shuffle";
 const GAME_MODE_NORMAL = "normal";
 const GAME_MODE_DAILY = "daily";
 const DAILY_STATE_STORAGE_KEY = "beemine.daily.v1";
+const MAP_STATS_STORAGE_KEY = "beemine.mapstats.v1";
 const PAGE_STANDARD = "standard";
 const PAGE_BONUS = "bonus";
 const FREQUENCY_PAGE_ALPHABETICAL = "alphabetical";
 const FREQUENCY_PAGE_FREQUENCY = "frequency";
+const STATS_TAB_DAILY = "daily";
+const STATS_TAB_ENDLESS = "endless";
+const STATS_RESULT_WON = "won";
+const STATS_RESULT_LOST = "lost";
+const TRIFORCE_MAP_ID = "triforce";
 const FIRST_CLICK_SAFE_NEIGHBOR_DISTRIBUTION = [
   { safeNeighbors: 6, weight: 40 },
   { safeNeighbors: 5, weight: 40 },
@@ -44,6 +50,7 @@ let dailyBeeBtn = null;
 let endlessNewGameBtn = null;
 let unscrambleEl = null;
 let prestartPromptEl = null;
+let prestartPromptMainEl = null;
 let guessStackEl = null;
 let categoryLabelEl = null;
 let wordSlotsEl = null;
@@ -57,6 +64,18 @@ let legendShiftNNewGameEl = null;
 let frequencyOpenBtn = null;
 let frequencyModalEl = null;
 let frequencyCloseBtn = null;
+let statsOpenBtn = null;
+let statsModalEl = null;
+let statsCloseBtn = null;
+let statsResetBtn = null;
+let statsEndlessGridEl = null;
+let statsPageSections = [];
+let statsTabDailyBtn = null;
+let statsTabEndlessBtn = null;
+let statsDailyWinRateEl = null;
+let statsDailyAvgHintsEl = null;
+let statsDailyCurrentStreakEl = null;
+let statsDailyLongestStreakEl = null;
 let hexOpenBtn = null;
 let hexModalEl = null;
 let hexCloseBtn = null;
@@ -73,20 +92,25 @@ let game = null;
 let neighborsByTileIndex = [];
 let selectedPage = PAGE_STANDARD;
 let selectedFrequencyPage = FREQUENCY_PAGE_ALPHABETICAL;
+let selectedStatsTab = STATS_TAB_DAILY;
 let selectedStandardMapId = SHUFFLE_MAP_ID;
 let selectedBonusMapId = null;
 let lastShuffledStandardMapId = null;
+let lastShuffledBonusMapId = null;
 let beeFlapTimer = null;
 let beeEyesTimer = null;
 let beePressTimer = null;
 let ignoreNextReplayClick = false;
 let dailyRecord = null;
+let mapStatsRecord = null;
 const CLASSIC_BASE_ROW_COUNT = buildPlacedMap(getDefaultMapId()).rowCount || 6;
 const CLASSIC_MAP_ID = getDefaultMapId();
 const STANDARD_MAP_DEFINITIONS = mapDefinitions.filter((entry) => entry.category !== PAGE_BONUS);
 const BONUS_MAP_DEFINITIONS = mapDefinitions.filter((entry) => entry.category === PAGE_BONUS);
 const DAILY_MAP_IDS = mapDefinitions.map((entry) => entry.id).sort((a, b) => a.localeCompare(b));
-selectedBonusMapId = BONUS_MAP_DEFINITIONS[0]?.id || getDefaultMapId();
+const MAP_NAME_BY_ID = new Map(mapDefinitions.map((entry) => [entry.id, entry.name]));
+const MAP_SORT_INDEX_BY_ID = new Map(mapDefinitions.map((entry, index) => [entry.id, index]));
+selectedBonusMapId = SHUFFLE_MAP_ID;
 
 function normalizeWordLetter(letter) {
   return letter;
@@ -195,7 +219,13 @@ function triggerBeeReaction() {
 
 function shouldRestoreGuessFocus() {
   return Boolean(
-    game && !game.over && game.secretWord && !isHelpOpen() && !isHexOpen() && !isFrequencyOpen()
+    game &&
+      !game.over &&
+      game.secretWord &&
+      !isHelpOpen() &&
+      !isHexOpen() &&
+      !isFrequencyOpen() &&
+      !isStatsOpen()
   );
 }
 
@@ -370,18 +400,20 @@ function setSelectedMapIdForPage(mapId) {
 
 function chooseResolvedMapId() {
   const selectedMapId = getSelectedMapIdForPage();
-  if (selectedPage !== PAGE_STANDARD || selectedMapId !== SHUFFLE_MAP_ID) {
+  if (selectedMapId !== SHUFFLE_MAP_ID) {
     return selectedMapId || getDefaultMapId();
   }
 
-  const candidateIds = STANDARD_MAP_DEFINITIONS.map((entry) => entry.id);
+  const candidateIds = getActiveMapDefinitions().map((entry) => entry.id);
   if (candidateIds.length === 0) {
     return getDefaultMapId();
   }
 
+  const lastShuffledMapId =
+    selectedPage === PAGE_BONUS ? lastShuffledBonusMapId : lastShuffledStandardMapId;
   const allowedIds =
     candidateIds.length > 1
-      ? candidateIds.filter((mapId) => mapId !== lastShuffledStandardMapId)
+      ? candidateIds.filter((mapId) => mapId !== lastShuffledMapId)
       : candidateIds;
   const roll = Math.floor(Math.random() * allowedIds.length);
   return allowedIds[roll] || candidateIds[0];
@@ -457,6 +489,423 @@ function getTodayDailyRecord() {
 function hasCompletedDailyBeeToday() {
   const record = getTodayDailyRecord();
   return Boolean(record && record.completed);
+}
+
+function createEmptyStatsBucket() {
+  return {
+    played: 0,
+    wins: 0,
+    losses: 0,
+    hintsTotal: 0,
+    hintRounds: 0,
+  };
+}
+
+function createEmptyStatsRecord() {
+  return {
+    version: 2,
+    endless: {
+      maps: {},
+    },
+    daily: {
+      outcomesByDate: {},
+    },
+  };
+}
+
+function toFiniteNumber(value) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : 0;
+}
+
+function sanitizeStatsBucket(bucket) {
+  const normalized = createEmptyStatsBucket();
+  if (!bucket || typeof bucket !== "object") return normalized;
+  normalized.played = Math.max(0, Math.floor(toFiniteNumber(bucket.played)));
+  normalized.wins = Math.max(0, Math.floor(toFiniteNumber(bucket.wins)));
+  normalized.losses = Math.max(0, Math.floor(toFiniteNumber(bucket.losses)));
+  normalized.hintsTotal = Math.max(0, toFiniteNumber(bucket.hintsTotal));
+  const hasHintRounds = Number.isFinite(Number(bucket.hintRounds));
+  normalized.hintRounds = hasHintRounds
+    ? Math.max(0, Math.floor(toFiniteNumber(bucket.hintRounds)))
+    : normalized.wins;
+  return normalized;
+}
+
+function sanitizeEndlessStats(endlessStats) {
+  const normalized = {
+    maps: {},
+  };
+  const maps = endlessStats && typeof endlessStats === "object" ? endlessStats.maps : null;
+  if (!maps || typeof maps !== "object") return normalized;
+
+  Object.entries(maps).forEach(([mapId, bucket]) => {
+    if (!mapId) return;
+    normalized.maps[mapId] = sanitizeStatsBucket(bucket);
+  });
+  return normalized;
+}
+
+function sanitizeDailyStats(dailyStats) {
+  const normalized = {
+    outcomesByDate: {}, // { [dateKey]: { result: "won"|"lost", hintsUsed: number } }
+  };
+  if (!dailyStats || typeof dailyStats !== "object") return normalized;
+
+  const outcomesByDate =
+    dailyStats.outcomesByDate && typeof dailyStats.outcomesByDate === "object"
+      ? dailyStats.outcomesByDate
+      : dailyStats.outcomes && typeof dailyStats.outcomes === "object"
+        ? dailyStats.outcomes
+        : {};
+
+  Object.entries(outcomesByDate).forEach(([dateKey, value]) => {
+    if (!dateKey) return;
+    const isLegacyString = typeof value === "string";
+    const result = isLegacyString ? value : value?.result;
+    if (result !== STATS_RESULT_WON && result !== STATS_RESULT_LOST) return;
+    const hintsUsedRaw = isLegacyString ? null : value?.hintsUsed;
+    const hintsUsed = Number.isFinite(Number(hintsUsedRaw)) ? Math.max(0, Number(hintsUsedRaw)) : 0;
+    normalized.outcomesByDate[dateKey] = {
+      result,
+      hintsUsed,
+    };
+  });
+  return normalized;
+}
+
+function sanitizeMapStatsRecord(record) {
+  const normalized = createEmptyStatsRecord();
+  if (!record || typeof record !== "object") return normalized;
+
+  // Migrate legacy endless-only structure into version 2.
+  const legacyMaps =
+    record.maps && typeof record.maps === "object"
+      ? record.maps
+      : record.byMap && typeof record.byMap === "object"
+        ? record.byMap
+        : null;
+  if (legacyMaps) {
+    normalized.endless.maps = sanitizeEndlessStats({ maps: legacyMaps }).maps;
+  }
+
+  const endlessSource = record.endless && typeof record.endless === "object" ? record.endless : null;
+  if (endlessSource) {
+    normalized.endless = sanitizeEndlessStats(endlessSource);
+  }
+
+  const dailySource = record.daily && typeof record.daily === "object" ? record.daily : null;
+  if (dailySource) {
+    normalized.daily = sanitizeDailyStats(dailySource);
+  }
+
+  return normalized;
+}
+
+function readMapStatsFromStorage() {
+  try {
+    const rawValue = window.localStorage.getItem(MAP_STATS_STORAGE_KEY);
+    if (!rawValue) return null;
+    const parsed = JSON.parse(rawValue);
+    return sanitizeMapStatsRecord(parsed);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function writeMapStatsToStorage(record) {
+  mapStatsRecord = sanitizeMapStatsRecord(record);
+  try {
+    window.localStorage.setItem(MAP_STATS_STORAGE_KEY, JSON.stringify(mapStatsRecord));
+  } catch (_error) {
+    // Ignore persistence failures and continue with in-memory state.
+  }
+}
+
+function getMapStatsRecord() {
+  if (mapStatsRecord) return mapStatsRecord;
+  mapStatsRecord = readMapStatsFromStorage() || sanitizeMapStatsRecord(null);
+  return mapStatsRecord;
+}
+
+function getMapDisplayName(mapId) {
+  return MAP_NAME_BY_ID.get(mapId) || mapId;
+}
+
+function isTriforceMap(mapId) {
+  if (!mapId) return false;
+  if (String(mapId).toLowerCase() === TRIFORCE_MAP_ID) return true;
+  const mapName = getMapDisplayName(mapId);
+  return String(mapName).toLowerCase() === "triforce";
+}
+
+function buildCombinedBucket(buckets) {
+  return buckets.reduce((combined, bucket) => {
+    const safeBucket = sanitizeStatsBucket(bucket);
+    combined.played += safeBucket.played;
+    combined.wins += safeBucket.wins;
+    combined.losses += safeBucket.losses;
+    combined.hintsTotal += safeBucket.hintsTotal;
+    combined.hintRounds += safeBucket.hintRounds;
+    return combined;
+  }, createEmptyStatsBucket());
+}
+
+function formatRate(part, total) {
+  if (total <= 0) return "--";
+  return `${((part / total) * 100).toFixed(1)}%`;
+}
+
+function formatAverageHints(hintsTotal, hintRounds) {
+  if (hintRounds <= 0) return "--";
+  return (hintsTotal / hintRounds).toFixed(2);
+}
+
+function updateEndlessStatsGrid() {
+  if (!statsEndlessGridEl) {
+    return;
+  }
+
+  const record = getMapStatsRecord();
+  const endlessMaps = record.endless.maps || {};
+  const standardMapIds = STANDARD_MAP_DEFINITIONS.map((entry) => entry.id).filter(
+    (mapId) => !isTriforceMap(mapId)
+  );
+  const bonusMapIds = BONUS_MAP_DEFINITIONS.map((entry) => entry.id).filter(
+    (mapId) => !isTriforceMap(mapId)
+  );
+  const knownMapIds = mapDefinitions.map((entry) => entry.id);
+  const unknownMapIds = Object.keys(endlessMaps).filter(
+    (mapId) => !MAP_SORT_INDEX_BY_ID.has(mapId) && !isTriforceMap(mapId)
+  );
+  unknownMapIds.sort((a, b) => getMapDisplayName(a).localeCompare(getMapDisplayName(b)));
+  const unknownEntries = unknownMapIds
+    .filter((mapId) => !knownMapIds.includes(mapId))
+    .map((mapId) => ({
+      label: getMapDisplayName(mapId),
+      bucket: sanitizeStatsBucket(endlessMaps[mapId]),
+      isOverall: false,
+    }));
+
+  const standardOverallBucket = buildCombinedBucket(
+    standardMapIds.map((mapId) => sanitizeStatsBucket(endlessMaps[mapId]))
+  );
+  const bonusOverallBucket = buildCombinedBucket(
+    bonusMapIds.map((mapId) => sanitizeStatsBucket(endlessMaps[mapId]))
+  );
+
+  const standardEntries = [
+    { label: "Overall - Standard", bucket: standardOverallBucket, isOverall: true },
+    ...standardMapIds.map((mapId) => ({
+      label: getMapDisplayName(mapId),
+      bucket: sanitizeStatsBucket(endlessMaps[mapId]),
+      isOverall: false,
+    })),
+  ];
+  const bonusEntries = [
+    { label: "Overall - Bonus", bucket: bonusOverallBucket, isOverall: true },
+    ...bonusMapIds.map((mapId) => ({
+      label: getMapDisplayName(mapId),
+      bucket: sanitizeStatsBucket(endlessMaps[mapId]),
+      isOverall: false,
+    })),
+    ...unknownEntries,
+  ];
+  const entries = [...standardEntries, ...bonusEntries].slice(0, 16);
+
+  statsEndlessGridEl.innerHTML = "";
+  entries.forEach((entry) => {
+    const winRateText =
+      entry.bucket.played <= 0 ? "--" : formatRate(entry.bucket.wins, entry.bucket.played);
+    const avgHintsText =
+      entry.bucket.played <= 0
+        ? "--"
+        : formatAverageHints(entry.bucket.hintsTotal, entry.bucket.hintRounds);
+
+    const tileEl = document.createElement("article");
+    tileEl.className = `endless-stat-card${entry.isOverall ? " endless-stat-card-overall" : ""}`;
+
+    const titleEl = document.createElement("h3");
+    titleEl.className = "endless-stat-title";
+    titleEl.textContent = entry.label;
+
+    const metricsEl = document.createElement("div");
+    metricsEl.className = "endless-stat-metrics";
+
+    const winStackEl = document.createElement("div");
+    winStackEl.className = "endless-stat-stack";
+    const winLabelEl = document.createElement("span");
+    winLabelEl.className = "endless-stat-stack-label";
+    winLabelEl.textContent = "Win %";
+    const winValueEl = document.createElement("span");
+    winValueEl.className = "endless-stat-stack-value";
+    winValueEl.textContent = winRateText;
+    winStackEl.append(winLabelEl, winValueEl);
+
+    const avgStackEl = document.createElement("div");
+    avgStackEl.className = "endless-stat-stack";
+    const avgLabelEl = document.createElement("span");
+    avgLabelEl.className = "endless-stat-stack-label";
+    avgLabelEl.textContent = "Avg. Hints";
+    const avgValueEl = document.createElement("span");
+    avgValueEl.className = "endless-stat-stack-value";
+    avgValueEl.textContent = avgHintsText;
+    avgStackEl.append(avgLabelEl, avgValueEl);
+
+    metricsEl.append(winStackEl, avgStackEl);
+    tileEl.append(titleEl, metricsEl);
+    statsEndlessGridEl.appendChild(tileEl);
+  });
+}
+
+function getDayNumberFromDateKey(dateKey) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey))) return null;
+  const [year, month, day] = String(dateKey).split("-").map((value) => Number.parseInt(value, 10));
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
+  return Math.floor(Date.UTC(year, month - 1, day) / 86_400_000);
+}
+
+function summarizeDailyStats(outcomesByDate) {
+  const entries = Object.entries(outcomesByDate || {})
+    .map(([dateKey, value]) => {
+      const result = typeof value === "string" ? value : value?.result;
+      const hintsUsedRaw = typeof value === "string" ? 0 : value?.hintsUsed;
+      const hintsUsed = Number.isFinite(Number(hintsUsedRaw)) ? Math.max(0, Number(hintsUsedRaw)) : 0;
+      return {
+        dateKey,
+        result,
+        hintsUsed,
+        dayNumber: getDayNumberFromDateKey(dateKey),
+      };
+    })
+    .filter((entry) => entry.result === STATS_RESULT_WON || entry.result === STATS_RESULT_LOST)
+    .filter((entry) => Number.isInteger(entry.dayNumber))
+    .sort((a, b) => a.dayNumber - b.dayNumber);
+
+  const summary = {
+    wins: 0,
+    losses: 0,
+    currentStreak: 0,
+    longestStreak: 0,
+    winRateText: "--",
+    avgHintsText: "--",
+  };
+
+  let runningStreak = 0;
+  let previousDay = null;
+  let wonHintSum = 0;
+  let wonHintCount = 0;
+  entries.forEach((entry) => {
+    if (entry.result === STATS_RESULT_WON) {
+      if (previousDay !== null && entry.dayNumber === previousDay + 1) {
+        runningStreak += 1;
+      } else {
+        runningStreak = 1;
+      }
+      summary.wins += 1;
+      wonHintSum += entry.hintsUsed;
+      wonHintCount += 1;
+      summary.longestStreak = Math.max(summary.longestStreak, runningStreak);
+    } else {
+      runningStreak = 0;
+      summary.losses += 1;
+    }
+    previousDay = entry.dayNumber;
+  });
+
+  const totalCompleted = summary.wins + summary.losses;
+  if (totalCompleted > 0) {
+    summary.winRateText = `${((summary.wins / totalCompleted) * 100).toFixed(1)}%`;
+  }
+  if (wonHintCount > 0) {
+    summary.avgHintsText = (wonHintSum / wonHintCount).toFixed(2);
+  }
+
+  if (entries.length === 0) {
+    return summary;
+  }
+
+  const latestEntry = entries[entries.length - 1];
+  if (latestEntry.result !== STATS_RESULT_WON) {
+    summary.currentStreak = 0;
+    return summary;
+  }
+
+  let expectedDay = latestEntry.dayNumber;
+  let streakCount = 0;
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (entry.result !== STATS_RESULT_WON) break;
+    if (entry.dayNumber !== expectedDay) break;
+    streakCount += 1;
+    expectedDay -= 1;
+  }
+  summary.currentStreak = streakCount;
+  return summary;
+}
+
+function updateDailyStatsPanel() {
+  if (
+    !statsDailyWinRateEl ||
+    !statsDailyAvgHintsEl ||
+    !statsDailyCurrentStreakEl ||
+    !statsDailyLongestStreakEl
+  ) {
+    return;
+  }
+  const record = getMapStatsRecord();
+  const summary = summarizeDailyStats(record.daily.outcomesByDate);
+  statsDailyWinRateEl.textContent = summary.winRateText;
+  statsDailyAvgHintsEl.textContent = summary.avgHintsText;
+  statsDailyCurrentStreakEl.textContent = String(summary.currentStreak);
+  statsDailyLongestStreakEl.textContent = String(summary.longestStreak);
+}
+
+function updateStatsViews() {
+  updateDailyStatsPanel();
+  updateEndlessStatsGrid();
+}
+
+function trackCompletedGameStats(result) {
+  if (!game || (result !== STATS_RESULT_WON && result !== STATS_RESULT_LOST)) return;
+
+  const record = getMapStatsRecord();
+  if (game.mode === GAME_MODE_DAILY) {
+    const dateKey = game.dailyDateKey || getLocalDateKey();
+    record.daily.outcomesByDate[dateKey] = {
+      result,
+      hintsUsed: Math.max(0, toFiniteNumber(game.hintsUsed)),
+    };
+  } else {
+    const mapId = game.mapId || getDefaultMapId();
+    const hintsUsed = Math.max(0, toFiniteNumber(game.hintsUsed));
+    if (!record.endless.maps[mapId]) {
+      record.endless.maps[mapId] = createEmptyStatsBucket();
+    }
+
+    const mapBucket = record.endless.maps[mapId];
+    mapBucket.played += 1;
+    if (result === STATS_RESULT_WON) {
+      mapBucket.wins += 1;
+      mapBucket.hintsTotal += hintsUsed;
+      mapBucket.hintRounds += 1;
+    } else {
+      mapBucket.losses += 1;
+    }
+  }
+
+  writeMapStatsToStorage(record);
+  updateStatsViews();
+}
+
+function resetMapStats() {
+  mapStatsRecord = sanitizeMapStatsRecord(null);
+  try {
+    window.localStorage.setItem(MAP_STATS_STORAGE_KEY, JSON.stringify(mapStatsRecord));
+  } catch (_error) {
+    // Ignore persistence failures and continue with in-memory state.
+  }
+  updateStatsViews();
 }
 
 function getDayNumberFromLocalDate(date = new Date()) {
@@ -1000,9 +1449,15 @@ function renderEntryMode() {
     game?.mode === GAME_MODE_DAILY
       ? "CLICK ANY TILE TO BEGIN"
       : "CLICK ANY TILE TO BEGIN";
-  prestartPromptEl.textContent = promptText;
-  prestartPromptEl.classList.toggle("hidden", hasStarted);
-  guessStackEl.classList.toggle("hidden", !hasStarted);
+  if (prestartPromptMainEl) {
+    prestartPromptMainEl.textContent = promptText;
+  } else {
+    prestartPromptEl.textContent = promptText;
+  }
+  prestartPromptEl.classList.toggle("entry-pane-hidden", hasStarted);
+  prestartPromptEl.setAttribute("aria-hidden", String(hasStarted));
+  guessStackEl.classList.toggle("entry-pane-hidden", !hasStarted);
+  guessStackEl.setAttribute("aria-hidden", String(!hasStarted));
   updateSubmitGuessVisibility();
   updateHintButtonState();
 }
@@ -1082,8 +1537,12 @@ function startGame(requestedMode = null, options = {}) {
         : GAME_MODE_NORMAL;
   const forcedMapId = options && typeof options.forcedMapId === "string" ? options.forcedMapId : null;
   const resolvedMapId = forcedMapId || chooseResolvedMapId();
-  if (selectedPage === PAGE_STANDARD && getSelectedMapIdForPage() === SHUFFLE_MAP_ID) {
-    lastShuffledStandardMapId = resolvedMapId;
+  if (getSelectedMapIdForPage() === SHUFFLE_MAP_ID) {
+    if (selectedPage === PAGE_BONUS) {
+      lastShuffledBonusMapId = resolvedMapId;
+    } else {
+      lastShuffledStandardMapId = resolvedMapId;
+    }
   }
   game = {
     mode,
@@ -1161,6 +1620,9 @@ function revealAllMines() {
 function setGameOver(message, result = null, useCategoryLabel = false) {
   game.over = true;
   game.outcome = { message, result, useCategoryLabel };
+  if (result === "won" || result === "lost") {
+    trackCompletedGameStats(result);
+  }
   if (result === "won" || result === "lost") {
     ignoreNextReplayClick = true;
   }
@@ -1363,7 +1825,7 @@ function onModeTabKeyDown(event) {
 
 function selectMap(mapId) {
   const activeMapIds = getActiveMapDefinitions().map((entry) => entry.id);
-  if (selectedPage === PAGE_STANDARD && mapId === SHUFFLE_MAP_ID) {
+  if (mapId === SHUFFLE_MAP_ID) {
     setSelectedMapIdForPage(SHUFFLE_MAP_ID);
   } else if (activeMapIds.includes(mapId)) {
     setSelectedMapIdForPage(mapId);
@@ -1405,7 +1867,6 @@ function setSelectedPage(page) {
   selectedPage = page;
   updatePageTabsUI();
   updateMapOptionVisibility();
-  startGame();
 }
 
 function checkGuess() {
@@ -1482,6 +1943,17 @@ function handleShiftCommand(event) {
       closeFrequency();
     } else {
       openFrequency();
+    }
+    return true;
+  }
+
+  if (key === "s") {
+    event.preventDefault();
+    event.beeShiftCommandHandled = true;
+    if (isStatsOpen()) {
+      closeStats();
+    } else {
+      openStats();
     }
     return true;
   }
@@ -1573,18 +2045,40 @@ function isFrequencyOpen() {
   return Boolean(frequencyModalEl && !frequencyModalEl.classList.contains("hidden"));
 }
 
+function isStatsOpen() {
+  return Boolean(statsModalEl && !statsModalEl.classList.contains("hidden"));
+}
+
+function syncTopControlActiveStates() {
+  if (helpOpenBtn) {
+    helpOpenBtn.classList.toggle("is-active", isHelpOpen());
+  }
+  if (hexOpenBtn) {
+    hexOpenBtn.classList.toggle("is-active", isHexOpen());
+  }
+  if (frequencyOpenBtn) {
+    frequencyOpenBtn.classList.toggle("is-active", isFrequencyOpen());
+  }
+  if (statsOpenBtn) {
+    statsOpenBtn.classList.toggle("is-active", isStatsOpen());
+  }
+}
+
 function openHelp() {
   if (!helpModalEl) return;
+  closeStats();
   closeFrequency();
   closeHex();
   helpModalEl.classList.remove("hidden");
   helpModalEl.setAttribute("aria-hidden", "false");
+  syncTopControlActiveStates();
 }
 
 function closeHelp() {
   if (!helpModalEl) return;
   helpModalEl.classList.add("hidden");
   helpModalEl.setAttribute("aria-hidden", "true");
+  syncTopControlActiveStates();
 }
 
 function onHelpModalClick(event) {
@@ -1595,23 +2089,79 @@ function onHelpModalClick(event) {
 
 function openHex() {
   if (!hexModalEl) return;
+  closeStats();
   closeFrequency();
   closeHelp();
   updateMapOptionVisibility();
   hexModalEl.classList.remove("hidden");
   hexModalEl.setAttribute("aria-hidden", "false");
+  syncTopControlActiveStates();
 }
 
 function closeHex() {
   if (!hexModalEl) return;
   hexModalEl.classList.add("hidden");
   hexModalEl.setAttribute("aria-hidden", "true");
+  syncTopControlActiveStates();
 }
 
 function onHexModalClick(event) {
   if (event.target === hexModalEl) {
     closeHex();
   }
+}
+
+function openStats() {
+  if (!statsModalEl) return;
+  closeHelp();
+  closeHex();
+  closeFrequency();
+  updateStatsTabsUI();
+  updateStatsPageVisibility();
+  updateStatsViews();
+  statsModalEl.classList.remove("hidden");
+  statsModalEl.setAttribute("aria-hidden", "false");
+  syncTopControlActiveStates();
+}
+
+function closeStats() {
+  if (!statsModalEl) return;
+  statsModalEl.classList.add("hidden");
+  statsModalEl.setAttribute("aria-hidden", "true");
+  syncTopControlActiveStates();
+}
+
+function onStatsModalClick(event) {
+  if (event.target === statsModalEl) {
+    closeStats();
+  }
+}
+
+function updateStatsTabsUI() {
+  if (statsTabDailyBtn) {
+    const isActive = selectedStatsTab === STATS_TAB_DAILY;
+    statsTabDailyBtn.classList.toggle("popup-tab-active", isActive);
+    statsTabDailyBtn.setAttribute("aria-selected", String(isActive));
+  }
+  if (statsTabEndlessBtn) {
+    const isActive = selectedStatsTab === STATS_TAB_ENDLESS;
+    statsTabEndlessBtn.classList.toggle("popup-tab-active", isActive);
+    statsTabEndlessBtn.setAttribute("aria-selected", String(isActive));
+  }
+}
+
+function updateStatsPageVisibility() {
+  statsPageSections.forEach((sectionEl) => {
+    const page = sectionEl.dataset.statsPage || STATS_TAB_DAILY;
+    sectionEl.classList.toggle("hidden", page !== selectedStatsTab);
+  });
+}
+
+function setSelectedStatsTab(tab) {
+  if (tab !== STATS_TAB_DAILY && tab !== STATS_TAB_ENDLESS) return;
+  selectedStatsTab = tab;
+  updateStatsTabsUI();
+  updateStatsPageVisibility();
 }
 
 function updateFrequencyTabsUI() {
@@ -1672,12 +2222,14 @@ function setSelectedFrequencyPage(page) {
 
 function openFrequency() {
   if (!frequencyModalEl) return;
+  closeStats();
   closeHelp();
   closeHex();
   updateFrequencyTabsUI();
   updateFrequencyPageVisibility();
   frequencyModalEl.classList.remove("hidden");
   frequencyModalEl.setAttribute("aria-hidden", "false");
+  syncTopControlActiveStates();
   requestAnimationFrame(() => {
     scaleVisibleFrequencyPage();
   });
@@ -1687,6 +2239,7 @@ function closeFrequency() {
   if (!frequencyModalEl) return;
   frequencyModalEl.classList.add("hidden");
   frequencyModalEl.setAttribute("aria-hidden", "true");
+  syncTopControlActiveStates();
 }
 
 function onFrequencyModalClick(event) {
@@ -1697,14 +2250,16 @@ function onFrequencyModalClick(event) {
 
 function onGlobalClick(event) {
   if (!game) return;
-  if (isHelpOpen() || isHexOpen() || isFrequencyOpen()) return;
+  if (isHelpOpen() || isHexOpen() || isFrequencyOpen() || isStatsOpen()) return;
   if (
     helpModalEl?.contains(event.target) ||
     helpOpenBtn?.contains(event.target) ||
     frequencyModalEl?.contains(event.target) ||
     frequencyOpenBtn?.contains(event.target) ||
     hexModalEl?.contains(event.target) ||
-    hexOpenBtn?.contains(event.target)
+    hexOpenBtn?.contains(event.target) ||
+    statsModalEl?.contains(event.target) ||
+    statsOpenBtn?.contains(event.target)
   ) {
     return;
   }
@@ -1751,12 +2306,13 @@ function onGlobalKeyDown(event) {
   if (handleShiftCommand(event)) return;
   if (event.defaultPrevented) return;
 
-  if (isHelpOpen() || isHexOpen() || isFrequencyOpen()) {
+  if (isHelpOpen() || isHexOpen() || isFrequencyOpen() || isStatsOpen()) {
     if (event.key === "Escape") {
       event.preventDefault();
       closeHelp();
       closeHex();
       closeFrequency();
+      closeStats();
     }
     return;
   }
@@ -1819,6 +2375,7 @@ function getInitialMode() {
 
 export function initGame() {
   dailyRecord = getTodayDailyRecord();
+  mapStatsRecord = getMapStatsRecord();
   boardEl = document.getElementById("board");
   statsStackEl = document.getElementById("stats-stack");
   resultMessageEl = document.getElementById("result-message");
@@ -1829,6 +2386,7 @@ export function initGame() {
   endlessNewGameBtn = document.getElementById("endless-new-game");
   unscrambleEl = document.getElementById("unscramble");
   prestartPromptEl = document.getElementById("prestart-prompt");
+  prestartPromptMainEl = document.getElementById("prestart-prompt-main");
   guessStackEl = document.getElementById("guess-stack");
   categoryLabelEl = document.getElementById("category-label");
   wordSlotsEl = document.getElementById("word-slots");
@@ -1842,6 +2400,18 @@ export function initGame() {
   frequencyOpenBtn = document.getElementById("frequency-open");
   frequencyModalEl = document.getElementById("frequency-modal");
   frequencyCloseBtn = document.getElementById("frequency-close");
+  statsOpenBtn = document.getElementById("stats-open");
+  statsModalEl = document.getElementById("stats-modal");
+  statsCloseBtn = document.getElementById("stats-close");
+  statsResetBtn = document.getElementById("stats-reset");
+  statsEndlessGridEl = document.getElementById("stats-endless-grid");
+  statsPageSections = Array.from(document.querySelectorAll(".stats-page[data-stats-page]"));
+  statsTabDailyBtn = document.getElementById("stats-tab-daily");
+  statsTabEndlessBtn = document.getElementById("stats-tab-endless");
+  statsDailyWinRateEl = document.getElementById("stats-daily-win-rate");
+  statsDailyAvgHintsEl = document.getElementById("stats-daily-avg-hints");
+  statsDailyCurrentStreakEl = document.getElementById("stats-daily-current-streak");
+  statsDailyLongestStreakEl = document.getElementById("stats-daily-longest-streak");
   hexOpenBtn = document.getElementById("hex-open");
   hexModalEl = document.getElementById("hex-modal");
   hexCloseBtn = document.getElementById("hex-close");
@@ -1878,6 +2448,18 @@ export function initGame() {
     !frequencyOpenBtn ||
     !frequencyModalEl ||
     !frequencyCloseBtn ||
+    !statsOpenBtn ||
+    !statsModalEl ||
+    !statsCloseBtn ||
+    !statsResetBtn ||
+    !statsEndlessGridEl ||
+    statsPageSections.length === 0 ||
+    !statsTabDailyBtn ||
+    !statsTabEndlessBtn ||
+    !statsDailyWinRateEl ||
+    !statsDailyAvgHintsEl ||
+    !statsDailyCurrentStreakEl ||
+    !statsDailyLongestStreakEl ||
     !hexOpenBtn ||
     !hexModalEl ||
     !hexCloseBtn ||
@@ -1903,6 +2485,16 @@ export function initGame() {
   frequencyOpenBtn.addEventListener("click", openFrequency);
   frequencyCloseBtn.addEventListener("click", closeFrequency);
   frequencyModalEl.addEventListener("click", onFrequencyModalClick);
+  statsOpenBtn.addEventListener("click", openStats);
+  statsCloseBtn.addEventListener("click", closeStats);
+  statsResetBtn.addEventListener("click", resetMapStats);
+  statsModalEl.addEventListener("click", onStatsModalClick);
+  statsTabDailyBtn.addEventListener("click", () => {
+    setSelectedStatsTab(STATS_TAB_DAILY);
+  });
+  statsTabEndlessBtn.addEventListener("click", () => {
+    setSelectedStatsTab(STATS_TAB_ENDLESS);
+  });
   hexOpenBtn.addEventListener("click", openHex);
   hexCloseBtn.addEventListener("click", closeHex);
   hexModalEl.addEventListener("click", onHexModalClick);
@@ -1935,10 +2527,14 @@ export function initGame() {
     syncModeButtonWidths();
   });
 
+  syncTopControlActiveStates();
   updatePageTabsUI();
   updateMapOptionVisibility();
   updateFrequencyTabsUI();
   updateFrequencyPageVisibility();
+  updateStatsTabsUI();
+  updateStatsPageVisibility();
+  updateStatsViews();
   if (getInitialMode() === GAME_MODE_DAILY) {
     startDailyGame();
   } else {

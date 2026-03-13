@@ -152,6 +152,20 @@ const RAW_MAP_DEFINITIONS = [
   },
   {
     category: "bonus",
+    id: "llama",
+    name: "Llama",
+    rows: [
+      "1GGG1",
+      "4",
+      "1ESE1",
+      "6",
+      "5",
+      "4",
+      "3",
+    ],
+  },
+  {
+    category: "bonus",
     id: "bell",
     name: "Bell",
     rows: [
@@ -179,20 +193,6 @@ const RAW_MAP_DEFINITIONS = [
   },
   {
     category: "bonus",
-    id: "llama",
-    name: "Llama",
-    rows: [
-      "1GGG1",
-      "4",
-      "1ESE1",
-      "6",
-      "5",
-      "4",
-      "3",
-    ],
-  },
-  {
-    category: "bonus",
     id: "octopus",
     name: "Octopus",
     rows: [
@@ -202,21 +202,6 @@ const RAW_MAP_DEFINITIONS = [
       "5",
       "1G4G1",
       "2ESE2",
-    ],
-  },
-  {
-    category: "bonus",
-    id: "triforce",
-    name: "Triforce",
-    rows: [
-      "D",
-      "2",
-      "1D1",
-      "4",
-      "1GGG1",
-      "2GG2",
-      "1D1G1D1",
-      "8",
     ],
   },
   {

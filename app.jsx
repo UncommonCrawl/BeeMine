@@ -36,8 +36,8 @@ const MAX_FREQUENCY_VALUE = LETTER_FREQUENCIES.reduce((max, [, frequency]) => {
   const numericValue = Number.parseFloat(frequency);
   return Number.isFinite(numericValue) ? Math.max(max, numericValue) : max;
 }, 0);
-const LETTER_FREQUENCIES_ALPHABETICAL = [...LETTER_FREQUENCIES].sort(([a], [b]) =>
-  a.localeCompare(b)
+const LETTER_FREQUENCIES_ALPHABETICAL = [...LETTER_FREQUENCIES].sort(
+  ([a], [b]) => a.localeCompare(b),
 );
 const LETTER_FREQUENCY_COLUMNS_BY_FREQUENCY = [
   LETTER_FREQUENCIES.slice(0, 13),
@@ -83,6 +83,16 @@ const MAP_OPTIONS = [
     isShuffle: true,
   },
   ...MAP_PREVIEWS.filter((preview) => preview.page === PAGE_STANDARD),
+  {
+    id: SHUFFLE_MAP_ID,
+    page: PAGE_BONUS,
+    name: "Shuffle",
+    tiles: [],
+    minX: 0,
+    width: SHUFFLE_PREVIEW_WIDTH,
+    height: SHUFFLE_PREVIEW_HEIGHT,
+    isShuffle: true,
+  },
   ...MAP_PREVIEWS.filter((preview) => preview.page === PAGE_BONUS),
 ];
 
@@ -91,8 +101,12 @@ function splitIntoTwoRows(options) {
   return [options.slice(0, midpoint), options.slice(midpoint)];
 }
 
-const STANDARD_MAP_OPTIONS = MAP_OPTIONS.filter((option) => option.page === PAGE_STANDARD);
-const BONUS_MAP_OPTIONS = MAP_OPTIONS.filter((option) => option.page === PAGE_BONUS);
+const STANDARD_MAP_OPTIONS = MAP_OPTIONS.filter(
+  (option) => option.page === PAGE_STANDARD,
+);
+const BONUS_MAP_OPTIONS = MAP_OPTIONS.filter(
+  (option) => option.page === PAGE_BONUS,
+);
 const [STANDARD_ROW_1, STANDARD_ROW_2] = splitIntoTwoRows(STANDARD_MAP_OPTIONS);
 const [BONUS_ROW_1, BONUS_ROW_2] = splitIntoTwoRows(BONUS_MAP_OPTIONS);
 
@@ -113,11 +127,15 @@ export default function App() {
   }, []);
   const statsButtonClass = "stats-button";
 
-  const renderHexWord = (word, keyPrefix) => (
-    <span className="site-word" aria-label={word}>
+  const renderHexWord = (word, keyPrefix, wordClassName) => (
+    <span className={`site-word ${wordClassName}`} aria-label={word}>
       {[...word].map((letter, index) => (
-        <span key={`${keyPrefix}-${index}`} className="site-letter-hex" aria-hidden="true">
-          {letter}
+        <span
+          key={`${keyPrefix}-${index}`}
+          className={`site-letter-hex${index === 0 ? " site-letter-hex-initial" : ""}`}
+          aria-hidden="true"
+        >
+          <span className="site-letter-char">{letter}</span>
         </span>
       ))}
     </span>
@@ -127,61 +145,107 @@ export default function App() {
     <main className="app">
       <div className="top-controls">
         <button
-          id="frequency-open"
-          className="frequency-trigger"
+          id="help-open"
+          className="top-control-hex help-trigger"
           type="button"
           aria-haspopup="dialog"
-          aria-controls="frequency-modal"
-          aria-label="Open letter frequency"
-          title="letter frequency"
+          aria-controls="help-modal"
+          aria-label="Open help"
         >
-          Aa
+          <span className="top-control-icon">?</span>
         </button>
         <button
           id="hex-open"
-          className="hex-trigger"
+          className="top-control-hex hex-trigger"
           type="button"
           aria-haspopup="dialog"
           aria-controls="hex-modal"
           aria-label="Open maps"
           title="maps"
         >
-          <svg viewBox="0 0 100 115.4701" aria-hidden="true">
-            <polygon points="50,8 92,32.25 92,83.22 50,107.47 8,83.22 8,32.25" />
-          </svg>
+          <span
+            className="top-control-icon top-control-icon-map"
+            aria-hidden="true"
+          >
+            <svg viewBox="0 0 100 115.4701" focusable="false">
+              <polygon points="50,8 92,32.25 92,83.22 50,107.47 8,83.22 8,32.25" />
+            </svg>
+          </span>
         </button>
         <button
-          id="help-open"
-          className="help-trigger"
+          id="stats-open"
+          className="top-control-hex stats-trigger"
           type="button"
           aria-haspopup="dialog"
-          aria-controls="help-modal"
-          aria-label="Open help"
+          aria-controls="stats-modal"
+          aria-label="Open stats"
+          title="stats"
         >
-          ?
+          <span className="top-control-icon">%</span>
+        </button>
+        <button
+          id="frequency-open"
+          className="top-control-hex frequency-trigger"
+          type="button"
+          aria-haspopup="dialog"
+          aria-controls="frequency-modal"
+          aria-label="Open letter frequency"
+          title="letter frequency"
+        >
+          <span className="top-control-icon">Aa</span>
         </button>
       </div>
       <section className="panel">
         <header>
           <h1 className="site-title">
-            {renderHexWord("bee", "bee")}
-            <img className="site-title-icon" src="/favicon.png" alt="" aria-hidden="true" />
-            {renderHexWord("mine", "mine")}
+            <img
+              className="site-title-icon site-title-icon-left"
+              src="/favicon.png"
+              alt=""
+              aria-hidden="true"
+            />
+            <span className="site-title-words">
+              {renderHexWord("bee", "bee", "site-word-bee")}
+              {renderHexWord("mine", "mine", "site-word-mine")}
+            </span>
+            <img
+              className="site-title-icon site-title-icon-right"
+              src="/favicon.png"
+              alt=""
+              aria-hidden="true"
+            />
           </h1>
         </header>
-        Find the mines, then unscramble the letters to form the hidden word! (Letters may be used more than once.)
+        <p className="site-tagline">
+          Find the mines. Unscramble the letters.{" "}
+          <strong>Guess the word!</strong>
+        </p>
         <Spacer />
         <div className="game-actions" role="tablist" aria-label="Game mode">
-          <button id="daily-bee" className="mode-option-button" type="button" role="tab">
+          <button
+            id="daily-bee"
+            className="mode-option-button"
+            type="button"
+            role="tab"
+          >
             Daily Bee
           </button>
-          <button id="new-game" className="mode-option-button" type="button" role="tab">
+          <button
+            id="new-game"
+            className="mode-option-button"
+            type="button"
+            role="tab"
+          >
             Endless Mode
           </button>
         </div>
         <div className="stats-row">
           <div id="stats-stack" className="stats">
-            <button id="mine-count" className={`${statsButtonClass} stats-display`} type="button">
+            <button
+              id="mine-count"
+              className={`${statsButtonClass} stats-display`}
+              type="button"
+            >
               Mines: 0
             </button>
             <button
@@ -191,7 +255,11 @@ export default function App() {
             >
               New Game
             </button>
-            <button id="flag-count" className={`${statsButtonClass} stats-display`} type="button">
+            <button
+              id="flag-count"
+              className={`${statsButtonClass} stats-display`}
+              type="button"
+            >
               Flags: 0
             </button>
           </div>
@@ -222,14 +290,24 @@ export default function App() {
             <strong>Shift-L</strong>: toggle levels
           </p>
           <p>
+            <strong>Shift-S</strong>: toggle stats
+          </p>
+          <p>
             <strong>Shift-A</strong>: toggle letter frequency
           </p>
         </div>
         <div id="unscramble" className="unscramble">
           <div id="prestart-prompt" className="prestart-prompt">
-            CLICK ANY TILE TO BEGIN
+            <span id="prestart-prompt-main">CLICK ANY TILE TO BEGIN</span>
+            <span className="prestart-subnote">
+              BEE CAREFUL: LETTERS MAY APPEAR MULTIPLE TIMES IN THE ANSWER!
+            </span>
           </div>
-          <div id="guess-stack" className="guess-stack hidden">
+          <div
+            id="guess-stack"
+            className="guess-stack entry-pane-hidden"
+            aria-hidden="true"
+          >
             <p id="category-label">CATEGORY:</p>
             <div className="guess-entry-row">
               <button
@@ -241,7 +319,11 @@ export default function App() {
               >
                 <img src={lightbulbIcon} alt="" aria-hidden="true" />
               </button>
-              <div id="word-slots" className="word-slots" aria-label="Word slots" />
+              <div
+                id="word-slots"
+                className="word-slots"
+                aria-label="Word slots"
+              />
               <button
                 id="submit-guess"
                 className="submit-guess"
@@ -251,7 +333,11 @@ export default function App() {
                 ↩
               </button>
             </div>
-            <div id="flagged-letters" className="flagged-letters" aria-label="Flagged letters" />
+            <div
+              id="flagged-letters"
+              className="flagged-letters"
+              aria-label="Flagged letters"
+            />
           </div>
         </div>
       </section>
@@ -265,7 +351,12 @@ export default function App() {
         aria-hidden="true"
       >
         <div className="popup-card help-card">
-          <button id="help-close" className="popup-close help-close" type="button" aria-label="Close help">
+          <button
+            id="help-close"
+            className="popup-close help-close"
+            type="button"
+            aria-label="Close help"
+          >
             &times;
           </button>
           <h2 id="help-title" className="help-title">
@@ -275,15 +366,33 @@ export default function App() {
             <div className="help-copy">
               <h3>How It Works</h3>
               <ul className="help-list">
-                <li>Click any tile to begin. The first clicked letter is guaranteed to be safe.</li>
-                <li>Numbers show how many neighboring tiles hide letters from the secret word.</li>
-                <li>Right-click a suspicious tile to flag its letter, then use the flagged letters to build your guess.</li>
-                <li>Letters may be used more than once. Press Enter to submit your guess.</li>
+                <li>
+                  Click any tile to begin. The first clicked letter is
+                  guaranteed to be safe.
+                </li>
+                <li>
+                  Numbers show how many neighboring tiles hide letters from the
+                  secret word.
+                </li>
+                <li>
+                  Right-click a suspicious tile to flag its letter, then use the
+                  flagged letters to build your guess.
+                </li>
+                <li>
+                  Letters may be used more than once. Press Enter to submit your
+                  guess.
+                </li>
               </ul>
               <h3>Tips</h3>
               <ul className="help-list">
-                <li>Not all puzzles are perfectly solvable, so sometimes you still need to make an informed guess.</li>
-                <li>If your letter bank gets cluttered, press Space to reshuffle it into a new order.</li>
+                <li>
+                  Not all puzzles are perfectly solvable, so sometimes you still
+                  need to make an informed guess.
+                </li>
+                <li>
+                  If your letter bank gets cluttered, press Space to reshuffle
+                  it into a new order.
+                </li>
               </ul>
             </div>
           </div>
@@ -311,65 +420,97 @@ export default function App() {
             Letter Frequency
           </h2>
           <p className="frequency-note">
-            Clicking on uncommon letters is a risky but valid way to gain information early.
+            Clicking on uncommon letters is a risky but valid way to gain
+            information early.
           </p>
           <div className="frequency-pages">
             <div className="frequency-page" data-frequency-page="alphabetical">
-              <div className="frequency-columns" aria-label="English letter frequency, alphabetical">
-                {LETTER_FREQUENCY_COLUMNS_ALPHABETICAL.map((column, columnIndex) => (
-                  <div
-                    key={`frequency-alpha-column-${columnIndex}`}
-                    className="frequency-table"
-                    role="table"
-                    aria-label={`Alphabetical letter frequency column ${columnIndex + 1}`}
-                  >
-                    <div className="frequency-body" role="rowgroup">
-                      {column.map(([letter, frequency]) => (
-                        <div key={letter} className="frequency-row" role="row">
-                          <span role="cell">{letter}</span>
-                          <span role="cell">{frequency}</span>
-                          <span className="frequency-bar-wrap" role="cell" aria-hidden="true">
-                            <span
-                              className="frequency-bar"
-                              style={{
-                                width: `${(Number.parseFloat(frequency) / MAX_FREQUENCY_VALUE) * 50}px`,
-                              }}
-                            />
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+              <div
+                className="frequency-columns table-modal-columns popup-columns-split"
+                aria-label="English letter frequency, alphabetical"
+              >
+                {LETTER_FREQUENCY_COLUMNS_ALPHABETICAL.map(
+                  (column, columnIndex) => (
+                    <table
+                      key={`frequency-alpha-column-${columnIndex}`}
+                      className="table-modal-table frequency-table"
+                      aria-label={`Alphabetical letter frequency column ${columnIndex + 1}`}
+                    >
+                      <thead>
+                        <tr>
+                          <th scope="col">Letter</th>
+                          <th scope="col">Freq</th>
+                          <th scope="col" aria-hidden="true" />
+                        </tr>
+                      </thead>
+                      <tbody className="frequency-body">
+                        {column.map(([letter, frequency]) => (
+                          <tr key={letter} className="frequency-row">
+                            <td>{letter}</td>
+                            <td>{frequency}</td>
+                            <td
+                              className="frequency-bar-wrap"
+                              aria-hidden="true"
+                            >
+                              <span
+                                className="frequency-bar"
+                                style={{
+                                  width: `${(Number.parseFloat(frequency) / MAX_FREQUENCY_VALUE) * 50}px`,
+                                }}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ),
+                )}
               </div>
             </div>
-            <div className="frequency-page hidden" data-frequency-page="frequency">
-              <div className="frequency-columns" aria-label="English letter frequency, by frequency">
-                {LETTER_FREQUENCY_COLUMNS_BY_FREQUENCY.map((column, columnIndex) => (
-                  <div
-                    key={`frequency-by-frequency-column-${columnIndex}`}
-                    className="frequency-table"
-                    role="table"
-                    aria-label={`Frequency-ranked letter column ${columnIndex + 1}`}
-                  >
-                    <div className="frequency-body" role="rowgroup">
-                      {column.map(([letter, frequency]) => (
-                        <div key={letter} className="frequency-row" role="row">
-                          <span role="cell">{letter}</span>
-                          <span role="cell">{frequency}</span>
-                          <span className="frequency-bar-wrap" role="cell" aria-hidden="true">
-                            <span
-                              className="frequency-bar"
-                              style={{
-                                width: `${(Number.parseFloat(frequency) / MAX_FREQUENCY_VALUE) * 50}px`,
-                              }}
-                            />
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+            <div
+              className="frequency-page hidden"
+              data-frequency-page="frequency"
+            >
+              <div
+                className="frequency-columns table-modal-columns popup-columns-split"
+                aria-label="English letter frequency, by frequency"
+              >
+                {LETTER_FREQUENCY_COLUMNS_BY_FREQUENCY.map(
+                  (column, columnIndex) => (
+                    <table
+                      key={`frequency-by-frequency-column-${columnIndex}`}
+                      className="table-modal-table frequency-table"
+                      aria-label={`Frequency-ranked letter column ${columnIndex + 1}`}
+                    >
+                      <thead>
+                        <tr>
+                          <th scope="col">Letter</th>
+                          <th scope="col">Freq</th>
+                          <th scope="col" aria-hidden="true" />
+                        </tr>
+                      </thead>
+                      <tbody className="frequency-body">
+                        {column.map(([letter, frequency]) => (
+                          <tr key={letter} className="frequency-row">
+                            <td>{letter}</td>
+                            <td>{frequency}</td>
+                            <td
+                              className="frequency-bar-wrap"
+                              aria-hidden="true"
+                            >
+                              <span
+                                className="frequency-bar"
+                                style={{
+                                  width: `${(Number.parseFloat(frequency) / MAX_FREQUENCY_VALUE) * 50}px`,
+                                }}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ),
+                )}
               </div>
             </div>
           </div>
@@ -377,7 +518,11 @@ export default function App() {
             Source: Robert Edward Lewand, Cryptological Mathematics
           </p>
           <div className="popup-tabs-wrap">
-            <div className="popup-tabs" role="tablist" aria-label="Letter frequency pages">
+            <div
+              className="popup-tabs"
+              role="tablist"
+              aria-label="Letter frequency pages"
+            >
               <button
                 id="frequency-page-alphabetical"
                 className="popup-tab popup-tab-active"
@@ -402,6 +547,104 @@ export default function App() {
       </section>
 
       <section
+        id="stats-modal"
+        className="popup-modal stats-modal hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="stats-title"
+        aria-hidden="true"
+      >
+        <div className="popup-card table-modal-card stats-card">
+          <button
+            id="stats-close"
+            className="popup-close stats-close"
+            type="button"
+            aria-label="Close stats"
+          >
+            &times;
+          </button>
+          <h2 id="stats-title" className="help-title">
+            Stats
+          </h2>
+          <div className="table-modal-body stats-table-wrap">
+            <div className="stats-pages">
+              <div className="stats-page" data-stats-page="daily">
+                <section
+                  className="daily-stats-grid"
+                  aria-label="Daily Bee stats"
+                >
+                  <article className="daily-stat-card">
+                    <h3 className="daily-stat-label">Win Rate %</h3>
+                    <p id="stats-daily-win-rate" className="daily-stat-value">
+                      --
+                    </p>
+                  </article>
+                  <article className="daily-stat-card">
+                    <h3 className="daily-stat-label">Avg. Hints</h3>
+                    <p id="stats-daily-avg-hints" className="daily-stat-value">
+                      --
+                    </p>
+                  </article>
+                  <article className="daily-stat-card">
+                    <h3 className="daily-stat-label">Current Streak</h3>
+                    <p
+                      id="stats-daily-current-streak"
+                      className="daily-stat-value"
+                    >
+                      0
+                    </p>
+                  </article>
+                  <article className="daily-stat-card">
+                    <h3 className="daily-stat-label">Longest Streak</h3>
+                    <p
+                      id="stats-daily-longest-streak"
+                      className="daily-stat-value"
+                    >
+                      0
+                    </p>
+                  </article>
+                </section>
+              </div>
+              <div className="stats-page hidden" data-stats-page="endless">
+                <section
+                  id="stats-endless-grid"
+                  className="endless-stats-grid"
+                  aria-label="Endless Mode map stats grid"
+                />
+              </div>
+            </div>
+          </div>
+          <div className="table-modal-actions stats-actions">
+            <button id="stats-reset" className="stats-reset" type="button">
+              Reset
+            </button>
+          </div>
+          <div className="popup-tabs-wrap">
+            <div className="popup-tabs" role="tablist" aria-label="Stats pages">
+              <button
+                id="stats-tab-daily"
+                className="popup-tab popup-tab-active"
+                type="button"
+                role="tab"
+                aria-selected="true"
+              >
+                Daily Bee
+              </button>
+              <button
+                id="stats-tab-endless"
+                className="popup-tab"
+                type="button"
+                role="tab"
+                aria-selected="false"
+              >
+                Endless Mode
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section
         id="hex-modal"
         className="popup-modal hex-modal hidden"
         role="dialog"
@@ -410,15 +653,32 @@ export default function App() {
         aria-hidden="true"
       >
         <div className="popup-card hex-card">
-          <button id="hex-close" className="popup-close hex-close" type="button" aria-label="Close hex popup">
+          <button
+            id="hex-close"
+            className="popup-close hex-close"
+            type="button"
+            aria-label="Close hex popup"
+          >
             &times;
           </button>
-          <h2 id="hex-title" className="help-title">Levels</h2>
+          <h2 id="hex-title" className="help-title">
+            Levels
+          </h2>
           <div className="map-grid" aria-label="Map previews">
-            {[{ page: PAGE_STANDARD, rows: [STANDARD_ROW_1, STANDARD_ROW_2] }, { page: PAGE_BONUS, rows: [BONUS_ROW_1, BONUS_ROW_2] }].map((section) => (
-              <div key={section.page} className="map-grid-page" data-page={section.page}>
+            {[
+              { page: PAGE_STANDARD, rows: [STANDARD_ROW_1, STANDARD_ROW_2] },
+              { page: PAGE_BONUS, rows: [BONUS_ROW_1, BONUS_ROW_2] },
+            ].map((section) => (
+              <div
+                key={section.page}
+                className="map-grid-page"
+                data-page={section.page}
+              >
                 {section.rows.map((row, rowIndex) => (
-                  <div key={`${section.page}-row-${rowIndex}`} className="map-grid-row">
+                  <div
+                    key={`${section.page}-row-${rowIndex}`}
+                    className="map-grid-row"
+                  >
                     {row.map((preview) => (
                       <button
                         key={preview.id}
@@ -444,16 +704,28 @@ export default function App() {
                               </text>
                             ) : null}
                             {preview.tiles.map((tile) => {
-                              const centerX = (tile.x - preview.minX) * PREVIEW_HEX_WIDTH + PREVIEW_HEX_HALF_WIDTH;
-                              const centerY = tile.row * PREVIEW_ROW_STEP + PREVIEW_HEX_HALF_HEIGHT;
+                              const centerX =
+                                (tile.x - preview.minX) * PREVIEW_HEX_WIDTH +
+                                PREVIEW_HEX_HALF_WIDTH;
+                              const centerY =
+                                tile.row * PREVIEW_ROW_STEP +
+                                PREVIEW_HEX_HALF_HEIGHT;
                               return (
                                 <g key={tile.key}>
                                   <polygon
                                     className={`preview-hex ${tile.kind}`}
-                                    points={getPreviewHexPoints(centerX, centerY)}
+                                    points={getPreviewHexPoints(
+                                      centerX,
+                                      centerY,
+                                    )}
                                   />
                                   {tile.kind === "inactive-yellow-eye" ? (
-                                    <circle className="preview-face-eye" cx={centerX} cy={centerY} r="1.8" />
+                                    <circle
+                                      className="preview-face-eye"
+                                      cx={centerX}
+                                      cy={centerY}
+                                      r="1.8"
+                                    />
                                   ) : null}
                                   {tile.kind === "inactive-yellow-smile" ? (
                                     <path
