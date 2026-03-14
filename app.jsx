@@ -57,7 +57,6 @@ const SHUFFLE_PREVIEW_WIDTH = PREVIEW_HEX_WIDTH * 6;
 const SHUFFLE_PREVIEW_HEIGHT = PREVIEW_HEX_HEIGHT + PREVIEW_ROW_STEP * 2;
 const PAGE_STANDARD = "standard";
 const PAGE_BONUS = "bonus";
-const Spacer = () => <div className="spacer" aria-hidden="true" />;
 
 const MAP_PREVIEWS = mapDefinitions.map((mapDefinition) => {
   const placedMap = buildPlacedMap(mapDefinition.id);
@@ -125,7 +124,6 @@ export default function App() {
   useEffect(() => {
     initGame();
   }, []);
-  const statsButtonClass = "stats-button";
 
   const renderHexWord = (word, keyPrefix, wordClassName) => (
     <span className={`site-word ${wordClassName}`} aria-label={word}>
@@ -144,55 +142,81 @@ export default function App() {
   return (
     <main className="app">
       <div className="top-controls">
-        <button
-          id="help-open"
-          className="top-control-hex help-trigger"
-          type="button"
-          aria-haspopup="dialog"
-          aria-controls="help-modal"
-          aria-label="Open help"
+        <div
+          id="top-controls-actions"
+          className="top-controls-actions"
+          aria-hidden="false"
         >
-          <span className="top-control-icon">?</span>
-        </button>
+          <button
+            id="help-open"
+            className="top-control-hex help-trigger"
+            type="button"
+            aria-haspopup="dialog"
+            aria-controls="help-modal"
+            aria-label="Open help"
+          >
+            <span className="top-control-icon">?</span>
+          </button>
+          <button
+            id="hex-open"
+            className="top-control-hex hex-trigger"
+            type="button"
+            aria-haspopup="dialog"
+            aria-controls="hex-modal"
+            aria-label="Open maps"
+            title="maps"
+          >
+            <span
+              className="top-control-icon top-control-icon-map"
+              aria-hidden="true"
+            >
+              <svg viewBox="0 0 100 115.4701" focusable="false">
+                <polygon points="50,8 92,32.25 92,83.22 50,107.47 8,83.22 8,32.25" />
+              </svg>
+            </span>
+          </button>
+          <button
+            id="stats-open"
+            className="top-control-hex stats-trigger"
+            type="button"
+            aria-haspopup="dialog"
+            aria-controls="stats-modal"
+            aria-label="Open stats"
+            title="stats"
+          >
+            <span className="top-control-icon">%</span>
+          </button>
+          <button
+            id="frequency-open"
+            className="top-control-hex frequency-trigger"
+            type="button"
+            aria-haspopup="dialog"
+            aria-controls="frequency-modal"
+            aria-label="Open letter frequency"
+            title="letter frequency"
+          >
+            <span className="top-control-icon">Aa</span>
+          </button>
+        </div>
         <button
-          id="hex-open"
-          className="top-control-hex hex-trigger"
+          id="top-controls-toggle"
+          className="top-control-hex top-control-toggle"
           type="button"
-          aria-haspopup="dialog"
-          aria-controls="hex-modal"
-          aria-label="Open maps"
-          title="maps"
+          aria-label="Toggle controls"
+          aria-controls="top-controls-actions"
+          aria-expanded="false"
+          title="menu"
         >
           <span
-            className="top-control-icon top-control-icon-map"
+            className="top-control-icon top-control-icon-menu"
             aria-hidden="true"
           >
-            <svg viewBox="0 0 100 115.4701" focusable="false">
-              <polygon points="50,8 92,32.25 92,83.22 50,107.47 8,83.22 8,32.25" />
+            <svg viewBox="0 0 24 24" focusable="false">
+              <rect x="4" y="6" width="16" height="2" rx="1" />
+              <rect x="4" y="11" width="16" height="2" rx="1" />
+              <rect x="4" y="16" width="16" height="2" rx="1" />
             </svg>
           </span>
-        </button>
-        <button
-          id="stats-open"
-          className="top-control-hex stats-trigger"
-          type="button"
-          aria-haspopup="dialog"
-          aria-controls="stats-modal"
-          aria-label="Open stats"
-          title="stats"
-        >
-          <span className="top-control-icon">%</span>
-        </button>
-        <button
-          id="frequency-open"
-          className="top-control-hex frequency-trigger"
-          type="button"
-          aria-haspopup="dialog"
-          aria-controls="frequency-modal"
-          aria-label="Open letter frequency"
-          title="letter frequency"
-        >
-          <span className="top-control-icon">Aa</span>
         </button>
       </div>
       <section className="panel">
@@ -220,7 +244,6 @@ export default function App() {
           Find the mines. Unscramble the letters.{" "}
           <strong>Guess the word!</strong>
         </p>
-        <Spacer />
         <div className="game-actions" role="tablist" aria-label="Game mode">
           <button
             id="daily-bee"
@@ -243,21 +266,21 @@ export default function App() {
           <div id="stats-stack" className="stats">
             <button
               id="mine-count"
-              className={`${statsButtonClass} stats-display`}
+              className="stats-button stats-display"
               type="button"
             >
               Mines: 0
             </button>
             <button
               id="endless-new-game"
-              className={`${statsButtonClass} endless-new-game hidden`}
+              className="stats-button endless-new-game hidden"
               type="button"
             >
               New Game
             </button>
             <button
               id="flag-count"
-              className={`${statsButtonClass} stats-display`}
+              className="stats-button stats-display"
               type="button"
             >
               Flags: 0

@@ -25,6 +25,7 @@ const PAGE_STANDARD = "standard";
 const PAGE_BONUS = "bonus";
 const FREQUENCY_PAGE_ALPHABETICAL = "alphabetical";
 const FREQUENCY_PAGE_FREQUENCY = "frequency";
+const DAILY_PERSIST_DEBOUNCE_MS = 500;
 const STATS_TAB_DAILY = "daily";
 const STATS_TAB_ENDLESS = "endless";
 const STATS_RESULT_WON = "won";
@@ -58,6 +59,8 @@ let hintLetterBtn = null;
 let submitGuessBtn = null;
 let flaggedLettersEl = null;
 let helpOpenBtn = null;
+let topControlsToggleBtn = null;
+let topControlsActionsEl = null;
 let helpModalEl = null;
 let helpCloseBtn = null;
 let legendShiftNNewGameEl = null;
@@ -86,6 +89,7 @@ let pageBonusBtn = null;
 let frequencyPageSections = [];
 let frequencyPageAlphabeticalBtn = null;
 let frequencyPageFrequencyBtn = null;
+let topControlsEl = null;
 
 let tiles = [];
 let game = null;
@@ -100,10 +104,10 @@ let lastShuffledBonusMapId = null;
 let beeFlapTimer = null;
 let beeEyesTimer = null;
 let beePressTimer = null;
+let dailyPersistTimer = null;
 let ignoreNextReplayClick = false;
 let dailyRecord = null;
 let mapStatsRecord = null;
-const CLASSIC_BASE_ROW_COUNT = buildPlacedMap(getDefaultMapId()).rowCount || 6;
 const CLASSIC_MAP_ID = getDefaultMapId();
 const STANDARD_MAP_DEFINITIONS = mapDefinitions.filter((entry) => entry.category !== PAGE_BONUS);
 const BONUS_MAP_DEFINITIONS = mapDefinitions.filter((entry) => entry.category === PAGE_BONUS);
@@ -111,10 +115,6 @@ const DAILY_MAP_IDS = mapDefinitions.map((entry) => entry.id).sort((a, b) => a.l
 const MAP_NAME_BY_ID = new Map(mapDefinitions.map((entry) => [entry.id, entry.name]));
 const MAP_SORT_INDEX_BY_ID = new Map(mapDefinitions.map((entry, index) => [entry.id, index]));
 selectedBonusMapId = SHUFFLE_MAP_ID;
-
-function normalizeWordLetter(letter) {
-  return letter;
-}
 
 function getPlayableWordLetters(word) {
   return String(word || "")
@@ -266,7 +266,6 @@ function initBoard(mapId) {
   const { xMin: minX, xSpan, rowCount } = layout;
   boardEl.style.setProperty("--board-x-span", String(xSpan));
   boardEl.style.setProperty("--board-row-count", String(rowCount));
-  boardEl.style.setProperty("--board-classic-row-count", String(CLASSIC_BASE_ROW_COUNT));
   neighborsByTileIndex = layout.neighborsByActiveIndex.map((neighborIndexes) => [...neighborIndexes]);
   const wingCandidatesByRow = new Map();
 
@@ -294,9 +293,9 @@ function initBoard(mapId) {
 
     const tileIndex = index;
     const letter = LETTER_GRID[index % LETTER_GRID.length];
-    const tileEl = document.createElement("button");
-    tileEl.type = "button";
+    const tileEl = document.createElement("div");
     tileEl.className = "tile";
+    tileEl.setAttribute("role", "button");
     tileEl.dataset.index = String(index);
     setTileVisualPosition(tileEl, renderX, entry.row);
     tileEl.appendChild(createHexSvg());
@@ -899,7 +898,13 @@ function trackCompletedGameStats(result) {
 }
 
 function resetMapStats() {
-  mapStatsRecord = sanitizeMapStatsRecord(null);
+  const record = getMapStatsRecord();
+  if (selectedStatsTab === STATS_TAB_DAILY) {
+    record.daily = sanitizeDailyStats(null);
+  } else {
+    record.endless = sanitizeEndlessStats(null);
+  }
+  mapStatsRecord = sanitizeMapStatsRecord(record);
   try {
     window.localStorage.setItem(MAP_STATS_STORAGE_KEY, JSON.stringify(mapStatsRecord));
   } catch (_error) {
@@ -949,8 +954,7 @@ function chooseWeightedFirstClickSafeNeighborTarget(maxNeighborCount) {
 
 function extractWordMineLetterData(secretWord) {
   const wordLetters = getPlayableWordLetters(secretWord)
-    .split("")
-    .map(normalizeWordLetter);
+    .split("");
   return {
     wordLetters,
     mineLetterSet: new Set(wordLetters),
@@ -978,7 +982,7 @@ function assignPrestartLetters(mode) {
 function assignDailyLettersAfterFirstClick(firstRevealIndex, secretWord) {
   if (firstRevealIndex < 0 || firstRevealIndex >= tiles.length) return false;
   const { mineLetterSet } = extractWordMineLetterData(secretWord);
-  const safeLetters = LETTER_GRID.filter((letter) => !mineLetterSet.has(normalizeWordLetter(letter)));
+  const safeLetters = LETTER_GRID.filter((letter) => !mineLetterSet.has(letter));
   if (safeLetters.length === 0) return false;
 
   const firstClickedLetter = safeLetters[Math.floor(Math.random() * safeLetters.length)];
@@ -1027,6 +1031,7 @@ function captureDailySnapshot() {
     guessSlots: Array.isArray(game.guessSlots) ? [...game.guessSlots] : [],
     hintedIndexes: game.hintedIndexes instanceof Set ? [...game.hintedIndexes] : [],
     hintedLetters: game.hintedLetters instanceof Set ? [...game.hintedLetters] : [],
+    hintedLetterOrder: Array.isArray(game.hintedLetterOrder) ? [...game.hintedLetterOrder] : [],
     hintsUsed: Number(game.hintsUsed) || 0,
     letterBankShuffleOrder: Array.isArray(game.letterBankShuffleOrder)
       ? [...game.letterBankShuffleOrder]
@@ -1053,6 +1058,27 @@ function persistDailyRecord(completedOverride = null) {
     snapshot,
   });
   updateModeButtons();
+}
+
+function clearDailyPersistTimer() {
+  if (!dailyPersistTimer) return;
+  clearTimeout(dailyPersistTimer);
+  dailyPersistTimer = null;
+}
+
+function scheduleDailyRecordPersist() {
+  if (!game || game.mode !== GAME_MODE_DAILY) return;
+  clearDailyPersistTimer();
+  dailyPersistTimer = setTimeout(() => {
+    dailyPersistTimer = null;
+    persistDailyRecord(false);
+  }, DAILY_PERSIST_DEBOUNCE_MS);
+}
+
+function flushDailyRecordPersist(completedOverride = null) {
+  if (!game || game.mode !== GAME_MODE_DAILY) return;
+  clearDailyPersistTimer();
+  persistDailyRecord(completedOverride);
 }
 
 function applyTileSnapshot(tile, snapshot) {
@@ -1095,6 +1121,9 @@ function restoreDailyGameFromSnapshot(snapshot) {
   game.guessSlots = Array.isArray(snapshot.guessSlots) ? [...snapshot.guessSlots] : [];
   game.hintedIndexes = new Set(Array.isArray(snapshot.hintedIndexes) ? snapshot.hintedIndexes : []);
   game.hintedLetters = new Set(Array.isArray(snapshot.hintedLetters) ? snapshot.hintedLetters : []);
+  game.hintedLetterOrder = Array.isArray(snapshot.hintedLetterOrder)
+    ? [...snapshot.hintedLetterOrder]
+    : [...game.hintedLetters];
   game.hintsUsed = Number(snapshot.hintsUsed) || 0;
   game.letterBankShuffleOrder = Array.isArray(snapshot.letterBankShuffleOrder)
     ? [...snapshot.letterBankShuffleOrder]
@@ -1106,11 +1135,8 @@ function restoreDailyGameFromSnapshot(snapshot) {
 
   tiles.forEach((tile, index) => {
     applyTileSnapshot(tile, snapshot.tiles[index] || {});
-    tile.element.disabled = game.over;
   });
-  game.mineCounts = new Set(
-    tiles.filter((tile) => tile.isMine).map((tile) => normalizeWordLetter(tile.letter))
-  );
+  game.mineCounts = new Set(tiles.filter((tile) => tile.isMine).map((tile) => tile.letter));
 
   boardEl.classList.remove("bee-awake", "bee-flap", "bee-dead", "bee-won");
   if (game.outcome?.result === "lost") {
@@ -1159,7 +1185,6 @@ function assignMinesForSecretWord(secretWord) {
   const uniqueMineLetters = new Set(
     getPlayableWordLetters(secretWord)
       .split("")
-      .map(normalizeWordLetter)
   );
 
   tiles.forEach((tile) => {
@@ -1206,7 +1231,7 @@ function renderWordSlots(secretWord, guessValue = "", revealState = null) {
   });
 }
 
-function syncGuessValue(nextGuessSlots) {
+function syncGuessValue(nextGuessSlots, persistStrategy = "debounced") {
   if (!game || !game.secretWord) return;
   const maxGuessLength = getPlayableWordLength(game.secretWord);
   if (!Array.isArray(game.guessSlots) || game.guessSlots.length !== maxGuessLength) {
@@ -1224,7 +1249,11 @@ function syncGuessValue(nextGuessSlots) {
   updateSubmitGuessVisibility();
   updateHintButtonState();
   if (game?.mode === GAME_MODE_DAILY) {
-    persistDailyRecord(false);
+    if (persistStrategy === "immediate") {
+      flushDailyRecordPersist(false);
+    } else if (persistStrategy === "debounced") {
+      scheduleDailyRecordPersist();
+    }
   }
 }
 
@@ -1247,7 +1276,7 @@ function appendGuessLetters(rawLetters) {
     }
   });
 
-  syncGuessValue(nextGuessSlots);
+  syncGuessValue(nextGuessSlots, "debounced");
 }
 
 function removeLastTypedGuessLetter() {
@@ -1262,7 +1291,7 @@ function removeLastTypedGuessLetter() {
     break;
   }
 
-  syncGuessValue(nextGuessSlots);
+  syncGuessValue(nextGuessSlots, "debounced");
 }
 
 function revealRandomHintLetter() {
@@ -1276,6 +1305,12 @@ function revealRandomHintLetter() {
   const chosenLetter = playableLetters[chosenIndex];
   const nextGuessSlots = [...game.guessSlots];
   game.hintsUsed += 1;
+  if (!game.hintedLetters.has(chosenLetter)) {
+    if (!Array.isArray(game.hintedLetterOrder)) {
+      game.hintedLetterOrder = [];
+    }
+    game.hintedLetterOrder.push(chosenLetter);
+  }
 
   playableLetters.forEach((letter, index) => {
     if (letter !== chosenLetter) return;
@@ -1284,7 +1319,7 @@ function revealRandomHintLetter() {
     nextGuessSlots[index] = letter;
   });
 
-  syncGuessValue(nextGuessSlots);
+  syncGuessValue(nextGuessSlots, "immediate");
   if (game.currentGuess === getPlayableWordLetters(game.secretWord)) {
     game.won = true;
     setGameOver(getWinMessage(), "won", true);
@@ -1318,30 +1353,68 @@ function updateHintButtonState() {
   hintLetterBtn.disabled = hintedCount >= targetLength;
 }
 
-function getLetterBankLetters() {
-  const flaggedLetters = [];
+function getHintedLetterOrder() {
+  if (!game) return [];
+  const hintedLetters = game.hintedLetters instanceof Set ? game.hintedLetters : new Set();
+  if (hintedLetters.size === 0) return [];
+  const rawOrder = Array.isArray(game.hintedLetterOrder) ? game.hintedLetterOrder : [];
+  const seen = new Set();
+  const ordered = [];
+  rawOrder.forEach((letter) => {
+    if (!hintedLetters.has(letter) || seen.has(letter)) return;
+    seen.add(letter);
+    ordered.push(letter);
+  });
+  hintedLetters.forEach((letter) => {
+    if (seen.has(letter)) return;
+    seen.add(letter);
+    ordered.push(letter);
+  });
+  return ordered;
+}
+
+function getLetterBankState() {
+  const hintedOrder = getHintedLetterOrder();
+  const hintedSet = new Set(hintedOrder);
+  const nonHintFlaggedSet = new Set();
   tiles.forEach((tile) => {
-    if (tile.flagCount > 0) {
-      flaggedLetters.push(tile.letter);
-    }
+    if (tile.flagCount <= 0 || hintedSet.has(tile.letter)) return;
+    nonHintFlaggedSet.add(tile.letter);
+  });
+  const nonHintFlaggedLetters = [...nonHintFlaggedSet].sort();
+  return {
+    letters: [...hintedOrder, ...nonHintFlaggedLetters],
+    hintedOrder,
+    hintedSet,
+  };
+}
+
+function mergeStoredShuffleWithAvailableLetters(storedShuffle, availableLetters) {
+  const availableSet = new Set(availableLetters);
+  const seen = new Set();
+  const merged = [];
+
+  storedShuffle.forEach((letter) => {
+    if (!availableSet.has(letter) || seen.has(letter)) return;
+    seen.add(letter);
+    merged.push(letter);
+  });
+  availableLetters.forEach((letter) => {
+    if (seen.has(letter)) return;
+    seen.add(letter);
+    merged.push(letter);
   });
 
-  const hintedLetters = game?.hintedLetters instanceof Set ? [...game.hintedLetters] : [];
-  const combinedLetters = [...flaggedLetters, ...hintedLetters];
-  if (combinedLetters.length === 0) {
-    return [];
-  }
-
-  return [...new Set(combinedLetters)].sort();
+  return merged;
 }
 
 function shuffleLetterBank() {
   if (!game || game.over || !game.secretWord) return;
 
-  const letters = getLetterBankLetters();
+  const { letters, hintedOrder } = getLetterBankState();
   if (letters.length < 2) return;
-
-  game.letterBankShuffleOrder = shuffle(letters);
+  const nonHintLetters = letters.slice(hintedOrder.length);
+  game.letterBankShuffleOrder = [...hintedOrder, ...shuffle(nonHintLetters)];
   renderFlaggedLetters();
 }
 
@@ -1349,17 +1422,20 @@ function renderFlaggedLetters() {
   if (!flaggedLettersEl) return;
   flaggedLettersEl.innerHTML = "";
 
-  const letterBankLetters = getLetterBankLetters();
+  const { letters: letterBankLetters, hintedOrder, hintedSet } = getLetterBankState();
   if (letterBankLetters.length === 0) return;
 
   const storedShuffle = Array.isArray(game?.letterBankShuffleOrder)
     ? game.letterBankShuffleOrder
     : [];
-  const lettersToRender =
-    storedShuffle.length > 0 &&
-    [...storedShuffle].sort().join("") === letterBankLetters.join("")
-      ? storedShuffle
-      : letterBankLetters;
+  const candidateLetters = storedShuffle.length > 0
+    ? mergeStoredShuffleWithAvailableLetters(storedShuffle, letterBankLetters)
+    : letterBankLetters;
+  const lettersToRender = [...hintedOrder];
+  candidateLetters.forEach((letter) => {
+    if (hintedSet.has(letter)) return;
+    lettersToRender.push(letter);
+  });
 
   if (game) {
     game.letterBankShuffleOrder = [...lettersToRender];
@@ -1516,6 +1592,7 @@ function initializeWordAfterFirstClick(firstRevealIndex) {
   game.guessSlots = Array.from({ length: getPlayableWordLength(secretEntry.word) }, () => "");
   game.hintedIndexes = new Set();
   game.hintedLetters = new Set();
+  game.hintedLetterOrder = [];
   game.currentGuess = "";
 
   mineCountEl.textContent = `Mines: ${game.totalMines}`;
@@ -1523,11 +1600,14 @@ function initializeWordAfterFirstClick(firstRevealIndex) {
   renderCategoryLabel();
   renderWordSlots(secretEntry.word, game.guessSlots);
   wordSlotsEl.focus();
-  persistDailyRecord(false);
+  if (game.mode === GAME_MODE_DAILY) {
+    flushDailyRecordPersist(false);
+  }
   return true;
 }
 
 function startGame(requestedMode = null, options = {}) {
+  clearDailyPersistTimer();
   ignoreNextReplayClick = false;
   const mode =
     requestedMode === GAME_MODE_DAILY || requestedMode === GAME_MODE_NORMAL
@@ -1556,6 +1636,7 @@ function startGame(requestedMode = null, options = {}) {
     guessSlots: [],
     hintedIndexes: new Set(),
     hintedLetters: new Set(),
+    hintedLetterOrder: [],
     hintsUsed: 0,
     letterBankShuffleOrder: [],
     firstRevealIndex: -1,
@@ -1583,7 +1664,6 @@ function startGame(requestedMode = null, options = {}) {
     tile.adjacentMines = 0;
     tile.element.className = "tile";
     tile.valueElement.textContent = "";
-    tile.element.disabled = false;
   });
 
   wordSlotsEl.innerHTML = "";
@@ -1598,7 +1678,7 @@ function startGame(requestedMode = null, options = {}) {
   updateHintButtonState();
   updateModeButtons();
   if (mode === GAME_MODE_DAILY && !options.skipDailyPersist) {
-    persistDailyRecord(false);
+    flushDailyRecordPersist(false);
   }
 }
 
@@ -1657,12 +1737,13 @@ function setGameOver(message, result = null, useCategoryLabel = false) {
   }
   updateHintButtonState();
   revealAllMines();
-  tiles.forEach((tile) => {
-    tile.element.disabled = true;
-  });
   if (game.mode === GAME_MODE_DAILY) {
     const isFinished = result === "won" || result === "lost";
-    persistDailyRecord(isFinished);
+    if (isFinished) {
+      flushDailyRecordPersist(true);
+    } else {
+      flushDailyRecordPersist(false);
+    }
   }
 }
 
@@ -1698,7 +1779,7 @@ function onReveal(index) {
   if (!game || game.over) return;
 
   const tile = tiles[index];
-  if (tile.revealed || tile.flagCount > 0) return;
+  if (!tile || tile.revealed || tile.flagCount > 0) return;
 
   if (!game.secretWord) {
     game.firstRevealIndex = index;
@@ -1736,7 +1817,7 @@ function onReveal(index) {
 
   updateStats();
   if (game.mode === GAME_MODE_DAILY) {
-    persistDailyRecord(false);
+    flushDailyRecordPersist(false);
   }
 }
 
@@ -1745,14 +1826,14 @@ function onToggleFlag(index) {
   if (!game.secretWord) return;
 
   const tile = tiles[index];
-  if (tile.revealed) return;
+  if (!tile || tile.revealed) return;
   tile.flagCount = tile.flagCount > 0 ? 0 : 1;
   tile.element.classList.toggle("flagged", tile.flagCount > 0);
   tile.valueElement.textContent = tile.flagCount > 0 ? "⚑" : "";
 
   updateStats();
   if (game.mode === GAME_MODE_DAILY) {
-    persistDailyRecord(false);
+    flushDailyRecordPersist(false);
   }
 }
 
@@ -1890,9 +1971,6 @@ function onSubmitGuess() {
 function onHintLetterClick() {
   revealRandomHintLetter();
   focusWordSlots();
-  if (game?.mode === GAME_MODE_DAILY) {
-    persistDailyRecord(false);
-  }
 }
 
 function handleShiftCommand(event) {
@@ -2064,6 +2142,45 @@ function syncTopControlActiveStates() {
   }
 }
 
+function isCompactTopControlsLayout() {
+  if (!topControlsToggleBtn || typeof window === "undefined" || typeof window.getComputedStyle !== "function") {
+    return false;
+  }
+  return window.getComputedStyle(topControlsToggleBtn).display !== "none";
+}
+
+function setTopControlsExpanded(isExpanded) {
+  if (!topControlsEl || !topControlsToggleBtn || !topControlsActionsEl) return;
+  const expanded = Boolean(isExpanded);
+  topControlsEl.classList.toggle("is-expanded", expanded);
+  topControlsToggleBtn.setAttribute("aria-expanded", String(expanded));
+  topControlsActionsEl.setAttribute("aria-hidden", String(!expanded));
+}
+
+function closeTopControlsMenu() {
+  if (!isCompactTopControlsLayout()) return;
+  setTopControlsExpanded(false);
+}
+
+function toggleTopControlsMenu() {
+  if (!isCompactTopControlsLayout()) return;
+  const isExpanded = Boolean(topControlsEl?.classList.contains("is-expanded"));
+  setTopControlsExpanded(!isExpanded);
+}
+
+function syncTopControlsLayout() {
+  if (!topControlsEl || !topControlsToggleBtn || !topControlsActionsEl) return;
+  if (isCompactTopControlsLayout()) {
+    const isExpanded = topControlsEl.classList.contains("is-expanded");
+    topControlsToggleBtn.setAttribute("aria-expanded", String(isExpanded));
+    topControlsActionsEl.setAttribute("aria-hidden", String(!isExpanded));
+    return;
+  }
+  topControlsEl.classList.remove("is-expanded");
+  topControlsToggleBtn.setAttribute("aria-expanded", "false");
+  topControlsActionsEl.setAttribute("aria-hidden", "false");
+}
+
 function openHelp() {
   if (!helpModalEl) return;
   closeStats();
@@ -2076,9 +2193,13 @@ function openHelp() {
 
 function closeHelp() {
   if (!helpModalEl) return;
+  const wasOpen = !helpModalEl.classList.contains("hidden");
   helpModalEl.classList.add("hidden");
   helpModalEl.setAttribute("aria-hidden", "true");
   syncTopControlActiveStates();
+  if (wasOpen) {
+    closeTopControlsMenu();
+  }
 }
 
 function onHelpModalClick(event) {
@@ -2100,9 +2221,13 @@ function openHex() {
 
 function closeHex() {
   if (!hexModalEl) return;
+  const wasOpen = !hexModalEl.classList.contains("hidden");
   hexModalEl.classList.add("hidden");
   hexModalEl.setAttribute("aria-hidden", "true");
   syncTopControlActiveStates();
+  if (wasOpen) {
+    closeTopControlsMenu();
+  }
 }
 
 function onHexModalClick(event) {
@@ -2126,9 +2251,13 @@ function openStats() {
 
 function closeStats() {
   if (!statsModalEl) return;
+  const wasOpen = !statsModalEl.classList.contains("hidden");
   statsModalEl.classList.add("hidden");
   statsModalEl.setAttribute("aria-hidden", "true");
   syncTopControlActiveStates();
+  if (wasOpen) {
+    closeTopControlsMenu();
+  }
 }
 
 function onStatsModalClick(event) {
@@ -2237,9 +2366,13 @@ function openFrequency() {
 
 function closeFrequency() {
   if (!frequencyModalEl) return;
+  const wasOpen = !frequencyModalEl.classList.contains("hidden");
   frequencyModalEl.classList.add("hidden");
   frequencyModalEl.setAttribute("aria-hidden", "true");
   syncTopControlActiveStates();
+  if (wasOpen) {
+    closeTopControlsMenu();
+  }
 }
 
 function onFrequencyModalClick(event) {
@@ -2282,7 +2415,7 @@ function onGlobalClick(event) {
 function onGlobalMouseDown(event) {
   if (event.button !== 0 || !boardEl) return;
   if (!(event.target instanceof Element)) return;
-  if (!event.target.closest("button.tile")) return;
+  if (!event.target.closest(".tile[data-index]")) return;
   boardEl.classList.remove("bee-press");
   if (beePressTimer) {
     clearTimeout(beePressTimer);
@@ -2376,6 +2509,9 @@ function getInitialMode() {
 export function initGame() {
   dailyRecord = getTodayDailyRecord();
   mapStatsRecord = getMapStatsRecord();
+  topControlsEl = document.querySelector(".top-controls");
+  topControlsActionsEl = document.getElementById("top-controls-actions");
+  topControlsToggleBtn = document.getElementById("top-controls-toggle");
   boardEl = document.getElementById("board");
   statsStackEl = document.getElementById("stats-stack");
   resultMessageEl = document.getElementById("result-message");
@@ -2442,6 +2578,9 @@ export function initGame() {
     !hintLetterBtn ||
     !submitGuessBtn ||
     !flaggedLettersEl ||
+    !topControlsEl ||
+    !topControlsActionsEl ||
+    !topControlsToggleBtn ||
     !helpOpenBtn ||
     !helpModalEl ||
     !helpCloseBtn ||
@@ -2480,6 +2619,7 @@ export function initGame() {
   dailyBeeBtn.addEventListener("keydown", onModeTabKeyDown);
   endlessNewGameBtn.addEventListener("click", startEndlessNewGame);
   helpOpenBtn.addEventListener("click", openHelp);
+  topControlsToggleBtn.addEventListener("click", toggleTopControlsMenu);
   helpCloseBtn.addEventListener("click", closeHelp);
   helpModalEl.addEventListener("click", onHelpModalClick);
   frequencyOpenBtn.addEventListener("click", openFrequency);
@@ -2525,8 +2665,10 @@ export function initGame() {
   window.addEventListener("resize", () => {
     scaleVisibleFrequencyPage();
     syncModeButtonWidths();
+    syncTopControlsLayout();
   });
 
+  syncTopControlsLayout();
   syncTopControlActiveStates();
   updatePageTabsUI();
   updateMapOptionVisibility();
