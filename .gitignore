@@ -1,0 +1,12 @@
+# Node Dependencies (The biggest source of noise)
+node_modules/
+
+# Vite Build Output (The generated artifacts)
+dist/
+.vite/
+
+# System Junk (In case you are on a Mac)
+.DS_Store
+
+# Environment Variables (For future security)
+.env

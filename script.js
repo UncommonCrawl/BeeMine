@@ -293,9 +293,9 @@ function initBoard(mapId) {
 
     const tileIndex = index;
     const letter = LETTER_GRID[index % LETTER_GRID.length];
-    const tileEl = document.createElement("div");
+    const tileEl = document.createElement("button");
+    tileEl.type = "button";
     tileEl.className = "tile";
-    tileEl.setAttribute("role", "button");
     tileEl.dataset.index = String(index);
     setTileVisualPosition(tileEl, renderX, entry.row);
     tileEl.appendChild(createHexSvg());

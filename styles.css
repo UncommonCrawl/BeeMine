@@ -589,6 +589,8 @@ button:focus-visible,
   cursor: pointer;
   transition: transform 120ms ease;
   z-index: 1;
+  -webkit-clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
 }
 
 .tile-inactive {
