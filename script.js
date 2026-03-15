@@ -1,5 +1,6 @@
 import { levelCatalog } from "./words.js";
 import { buildPlacedMap, getDefaultMapId, mapDefinitions } from "./mapLayouts.js";
+import { dailySchedule } from "./dailySchedule.js";
 
 const MIN_WORD_LENGTH = 6;
 const LEVEL_ENTRIES =
@@ -40,12 +41,53 @@ const FIRST_CLICK_SAFE_NEIGHBOR_DISTRIBUTION = [
   { safeNeighbors: 1, weight: 15 },
   { safeNeighbors: 0, weight: 5 },
 ];
-
+const DECORATIVE_EDGE_SEGMENTS = Object.freeze([
+  Object.freeze({ edgeKey: "left", dx: -1, dy: 0, x1: 0, y1: 28.8675, x2: 0, y2: 86.6025 }),
+  Object.freeze({ edgeKey: "right", dx: 1, dy: 0, x1: 100, y1: 28.8675, x2: 100, y2: 86.6025 }),
+  Object.freeze({
+    edgeKey: "upper-left",
+    dx: -0.5,
+    dy: -1,
+    x1: 0,
+    y1: 28.8675,
+    x2: 50,
+    y2: 0,
+  }),
+  Object.freeze({
+    edgeKey: "upper-right",
+    dx: 0.5,
+    dy: -1,
+    x1: 50,
+    y1: 0,
+    x2: 100,
+    y2: 28.8675,
+  }),
+  Object.freeze({
+    edgeKey: "lower-left",
+    dx: -0.5,
+    dy: 1,
+    x1: 0,
+    y1: 86.6025,
+    x2: 50,
+    y2: 115.4701,
+  }),
+  Object.freeze({
+    edgeKey: "lower-right",
+    dx: 0.5,
+    dy: 1,
+    x1: 100,
+    y1: 86.6025,
+    x2: 50,
+    y2: 115.4701,
+  }),
+]);
 let boardEl = null;
 let statsStackEl = null;
 let resultMessageEl = null;
 let flagCountEl = null;
 let mineCountEl = null;
+let flagCountValueEl = null;
+let mineCountValueEl = null;
 let newGameBtn = null;
 let dailyBeeBtn = null;
 let endlessNewGameBtn = null;
@@ -57,6 +99,7 @@ let categoryLabelEl = null;
 let wordSlotsEl = null;
 let hintLetterBtn = null;
 let submitGuessBtn = null;
+let shuffleBankBtn = null;
 let flaggedLettersEl = null;
 let helpOpenBtn = null;
 let topControlsToggleBtn = null;
@@ -101,14 +144,12 @@ let selectedStandardMapId = SHUFFLE_MAP_ID;
 let selectedBonusMapId = null;
 let lastShuffledStandardMapId = null;
 let lastShuffledBonusMapId = null;
-let beeFlapTimer = null;
 let beeEyesTimer = null;
 let beePressTimer = null;
 let dailyPersistTimer = null;
 let ignoreNextReplayClick = false;
 let dailyRecord = null;
 let mapStatsRecord = null;
-const CLASSIC_MAP_ID = getDefaultMapId();
 const STANDARD_MAP_DEFINITIONS = mapDefinitions.filter((entry) => entry.category !== PAGE_BONUS);
 const BONUS_MAP_DEFINITIONS = mapDefinitions.filter((entry) => entry.category === PAGE_BONUS);
 const DAILY_MAP_IDS = mapDefinitions.map((entry) => entry.id).sort((a, b) => a.localeCompare(b));
@@ -134,6 +175,25 @@ const ELIGIBLE_LEVELS = LEVEL_ENTRIES.filter(
   (entry) => !entry.hidden && getPlayableWordLength(entry.word) >= MIN_WORD_LENGTH
 );
 const DAILY_ELIGIBLE_LEVELS = [...ELIGIBLE_LEVELS].sort((a, b) => a.id.localeCompare(b.id));
+const DAILY_ENTRY_BY_KEY = new Map(
+  DAILY_ELIGIBLE_LEVELS.map((entry) => [`${entry.category}::${entry.word}`, entry])
+);
+const DAILY_SCHEDULE_BY_DATE = new Map(
+  (Array.isArray(dailySchedule) ? dailySchedule : [])
+    .filter(
+      (entry) =>
+        entry &&
+        typeof entry === "object" &&
+        typeof entry.date === "string" &&
+        typeof entry.category === "string" &&
+        typeof entry.word === "string" &&
+        typeof entry.mapId === "string"
+    )
+    .map((entry) => [
+      entry.date,
+      { category: entry.category, word: entry.word, mapId: entry.mapId },
+    ])
+);
 
 function neighbors(index) {
   const neighborIndexes = neighborsByTileIndex[index];
@@ -149,19 +209,54 @@ function shuffle(array) {
   return copy;
 }
 
-function createHexSvg() {
+function createHexSvg(options = {}) {
+  const includeDecorativeSharedEdges = Boolean(options.includeDecorativeSharedEdges);
+  const hexPoints = "50,0 100,28.8675 100,86.6025 50,115.4701 0,86.6025 0,28.8675";
   const svgEl = document.createElementNS(SVG_NS, "svg");
   svgEl.setAttribute("class", "tile-svg");
   svgEl.setAttribute("viewBox", "0 0 100 115.4701");
   svgEl.setAttribute("aria-hidden", "true");
 
-  const polygonEl = document.createElementNS(SVG_NS, "polygon");
-  polygonEl.setAttribute("class", "tile-shape");
-  polygonEl.setAttribute(
-    "points",
-    "50,0 100,28.8675 100,86.6025 50,115.4701 0,86.6025 0,28.8675"
-  );
-  svgEl.appendChild(polygonEl);
+  if (includeDecorativeSharedEdges) {
+    const fillPolygonEl = document.createElementNS(SVG_NS, "polygon");
+    fillPolygonEl.setAttribute("class", "tile-shape tile-shape-fill");
+    fillPolygonEl.setAttribute("points", hexPoints);
+    svgEl.appendChild(fillPolygonEl);
+
+    const edgeLayerEl = document.createElementNS(SVG_NS, "g");
+    edgeLayerEl.setAttribute("class", "tile-nonshared-edge-layer");
+    DECORATIVE_EDGE_SEGMENTS.forEach((segment) => {
+      const edgeEl = document.createElementNS(SVG_NS, "line");
+      edgeEl.setAttribute("class", "tile-nonshared-edge");
+      edgeEl.setAttribute("data-edge-key", segment.edgeKey);
+      edgeEl.setAttribute("x1", String(segment.x1));
+      edgeEl.setAttribute("y1", String(segment.y1));
+      edgeEl.setAttribute("x2", String(segment.x2));
+      edgeEl.setAttribute("y2", String(segment.y2));
+      edgeLayerEl.appendChild(edgeEl);
+    });
+    svgEl.appendChild(edgeLayerEl);
+
+    const sharedSeamLayerEl = document.createElementNS(SVG_NS, "g");
+    sharedSeamLayerEl.setAttribute("class", "tile-shared-seam-layer");
+    DECORATIVE_EDGE_SEGMENTS.forEach((segment) => {
+      const seamEl = document.createElementNS(SVG_NS, "line");
+      seamEl.setAttribute("class", "tile-shared-seam-edge");
+      seamEl.setAttribute("data-edge-key", segment.edgeKey);
+      seamEl.setAttribute("x1", String(segment.x1));
+      seamEl.setAttribute("y1", String(segment.y1));
+      seamEl.setAttribute("x2", String(segment.x2));
+      seamEl.setAttribute("y2", String(segment.y2));
+      sharedSeamLayerEl.appendChild(seamEl);
+    });
+    svgEl.appendChild(sharedSeamLayerEl);
+  } else {
+    const polygonEl = document.createElementNS(SVG_NS, "polygon");
+    polygonEl.setAttribute("class", "tile-shape");
+    polygonEl.setAttribute("points", hexPoints);
+    svgEl.appendChild(polygonEl);
+  }
+
   return svgEl;
 }
 
@@ -169,7 +264,7 @@ function createInactiveTile(kind) {
   const tileEl = document.createElement("div");
   tileEl.className = `tile tile-inactive tile-inactive-${kind}`;
   tileEl.setAttribute("aria-hidden", "true");
-  tileEl.appendChild(createHexSvg());
+  tileEl.appendChild(createHexSvg({ includeDecorativeSharedEdges: true }));
 
   if (kind === "yellow-eye") {
     const eyeEl = document.createElement("span");
@@ -190,24 +285,9 @@ function setTileVisualPosition(element, x, row) {
   element.style.setProperty("--tile-row", String(row));
 }
 
-function setWingVisualPosition(element, x, row) {
-  element.style.setProperty("--wing-x", String(x));
-  element.style.setProperty("--wing-row", String(row));
-}
-
 function triggerBeeReaction() {
   if (!boardEl) return;
   boardEl.classList.add("bee-awake");
-  boardEl.classList.remove("bee-flap");
-  void boardEl.offsetWidth;
-  boardEl.classList.add("bee-flap");
-
-  if (beeFlapTimer) {
-    clearTimeout(beeFlapTimer);
-  }
-  beeFlapTimer = setTimeout(() => {
-    boardEl.classList.remove("bee-flap");
-  }, 260);
 
   if (beeEyesTimer) {
     clearTimeout(beeEyesTimer);
@@ -239,55 +319,56 @@ function bindBeeReaction(element) {
   });
 }
 
-function createWing(side, lowerRenderX, lowerRow, upperDx) {
-  const wingEl = document.createElement("div");
-  wingEl.className = `wing wing-${side}`;
-  setWingVisualPosition(wingEl, lowerRenderX, lowerRow);
+function applyDecorativeSharedEdges(decorativeTilesByCoordinate) {
+  decorativeTilesByCoordinate.forEach((tileData) => {
+    DECORATIVE_EDGE_SEGMENTS.forEach((segment) => {
+      const neighborKey = `${tileData.row + segment.dy}:${tileData.x + segment.dx}`;
+      const hasDecorativeNeighbor = decorativeTilesByCoordinate.has(neighborKey);
+      const edgeEl = tileData.element.querySelector(
+        `.tile-nonshared-edge[data-edge-key="${segment.edgeKey}"]`
+      );
+      if (!edgeEl) return;
+      edgeEl.classList.toggle("is-shared", hasDecorativeNeighbor);
 
-  const upperTile = createInactiveTile("black");
-  upperTile.classList.add("wing-tile", "wing-upper");
-  setTileVisualPosition(upperTile, upperDx, -1);
-  bindBeeReaction(upperTile);
-
-  const lowerTile = createInactiveTile("black");
-  lowerTile.classList.add("wing-tile", "wing-lower");
-  setTileVisualPosition(lowerTile, 0, 0);
-  bindBeeReaction(lowerTile);
-
-  wingEl.append(upperTile, lowerTile);
-  return wingEl;
+      const seamEl = tileData.element.querySelector(
+        `.tile-shared-seam-edge[data-edge-key="${segment.edgeKey}"]`
+      );
+      const isCanonicalOwner =
+        hasDecorativeNeighbor &&
+        (tileData.row < tileData.row + segment.dy ||
+          (tileData.row === tileData.row + segment.dy && tileData.x < tileData.x + segment.dx));
+      if (seamEl) {
+        seamEl.classList.toggle("is-visible", isCanonicalOwner);
+      }
+    });
+  });
 }
 
 function initBoard(mapId) {
   boardEl.innerHTML = "";
   tiles = [];
   const layout = buildPlacedMap(mapId);
-  const isClassicMap = mapId === CLASSIC_MAP_ID;
   const { xMin: minX, xSpan, rowCount } = layout;
   boardEl.style.setProperty("--board-x-span", String(xSpan));
   boardEl.style.setProperty("--board-row-count", String(rowCount));
   neighborsByTileIndex = layout.neighborsByActiveIndex.map((neighborIndexes) => [...neighborIndexes]);
-  const wingCandidatesByRow = new Map();
+  const decorativeTilesByCoordinate = new Map();
 
   let index = 0;
   layout.tiles.forEach((entry) => {
     const renderX = entry.x - minX;
     if (entry.kind !== "active") {
-      if (
-        isClassicMap &&
-        entry.kind === "inactive-black" &&
-        (entry.row === 0 || entry.row === 1)
-      ) {
-        const rowEntries = wingCandidatesByRow.get(entry.row) || [];
-        rowEntries.push(entry);
-        wingCandidatesByRow.set(entry.row, rowEntries);
-        return;
-      }
       const kind = entry.kind.replace("inactive-", "");
       const tileEl = createInactiveTile(kind);
       setTileVisualPosition(tileEl, renderX, entry.row);
       bindBeeReaction(tileEl);
       boardEl.appendChild(tileEl);
+      decorativeTilesByCoordinate.set(`${entry.row}:${entry.x}`, {
+        element: tileEl,
+        row: entry.row,
+        x: entry.x,
+        renderX,
+      });
       return;
     }
 
@@ -356,29 +437,7 @@ function initBoard(mapId) {
     index += 1;
   });
 
-  if (isClassicMap) {
-    const left = [];
-    const right = [];
-    [0, 1].forEach((row) => {
-      const rowEntries = wingCandidatesByRow.get(row) || [];
-      if (rowEntries.length < 2) return;
-      rowEntries.sort((a, b) => a.x - b.x);
-      left.push(rowEntries[0]);
-      right.push(rowEntries[rowEntries.length - 1]);
-    });
-
-    if (left.length === 2) {
-      const [leftUpper, leftLower] = left.sort((a, b) => a.row - b.row);
-      const wingEl = createWing("left", leftLower.x - minX, leftLower.row, leftUpper.x - leftLower.x);
-      boardEl.appendChild(wingEl);
-    }
-
-    if (right.length === 2) {
-      const [rightUpper, rightLower] = right.sort((a, b) => a.row - b.row);
-      const wingEl = createWing("right", rightLower.x - minX, rightLower.row, rightUpper.x - rightLower.x);
-      boardEl.appendChild(wingEl);
-    }
-  }
+  applyDecorativeSharedEdges(decorativeTilesByCoordinate);
 }
 
 function getActiveMapDefinitions() {
@@ -925,12 +984,29 @@ function getDayNumberFromUtcDate(date = new Date()) {
 
 function chooseDailySecretEntry(date = new Date()) {
   if (DAILY_ELIGIBLE_LEVELS.length === 0) return null;
+  const dateKey = getLocalDateKey(date);
+  const scheduledEntry = DAILY_SCHEDULE_BY_DATE.get(dateKey);
+  if (scheduledEntry) {
+    const key = `${scheduledEntry.category}::${String(scheduledEntry.word).toUpperCase()}`;
+    const matchedEntry = DAILY_ENTRY_BY_KEY.get(key);
+    if (matchedEntry) return matchedEntry;
+  }
+
+  // Fallback keeps Daily Bee playable when the schedule does not include the date.
   const dayNumber = getDayNumberFromLocalDate(date);
-  const index = ((dayNumber % DAILY_ELIGIBLE_LEVELS.length) + DAILY_ELIGIBLE_LEVELS.length) % DAILY_ELIGIBLE_LEVELS.length;
+  const index =
+    ((dayNumber % DAILY_ELIGIBLE_LEVELS.length) + DAILY_ELIGIBLE_LEVELS.length) %
+    DAILY_ELIGIBLE_LEVELS.length;
   return DAILY_ELIGIBLE_LEVELS[index];
 }
 
 function chooseDailyMapId(date = new Date()) {
+  const dateKey = getLocalDateKey(date);
+  const scheduledEntry = DAILY_SCHEDULE_BY_DATE.get(dateKey);
+  if (scheduledEntry && DAILY_MAP_IDS.includes(scheduledEntry.mapId)) {
+    return scheduledEntry.mapId;
+  }
+
   if (DAILY_MAP_IDS.length === 0) return getDefaultMapId();
   const dayNumber = getDayNumberFromUtcDate(date);
   const index = ((dayNumber % DAILY_MAP_IDS.length) + DAILY_MAP_IDS.length) % DAILY_MAP_IDS.length;
@@ -1138,14 +1214,14 @@ function restoreDailyGameFromSnapshot(snapshot) {
   });
   game.mineCounts = new Set(tiles.filter((tile) => tile.isMine).map((tile) => tile.letter));
 
-  boardEl.classList.remove("bee-awake", "bee-flap", "bee-dead", "bee-won");
+  boardEl.classList.remove("bee-awake", "bee-dead", "bee-won");
   if (game.outcome?.result === "lost") {
     boardEl.classList.add("bee-dead");
   } else if (game.outcome?.result === "won") {
     boardEl.classList.add("bee-won");
   }
 
-  mineCountEl.textContent = game.secretWord ? `Mines: ${game.totalMines}` : "Mines: ?";
+  setMineCountDisplay(game.secretWord ? game.totalMines : "?");
   renderEntryMode();
   renderCategoryLabel();
   if (game.secretWord) {
@@ -1159,9 +1235,8 @@ function restoreDailyGameFromSnapshot(snapshot) {
   }
 
   if (game.over && game.outcome) {
-    if (game.outcome.useCategoryLabel && categoryLabelEl) {
-      categoryLabelEl.classList.add("category-label-outcome");
-      categoryLabelEl.textContent = game.outcome.message || "";
+    if (game.outcome.useCategoryLabel && flaggedLettersEl) {
+      renderFlaggedLetters();
       resultMessageEl.textContent = "";
       resultMessageEl.classList.add("hidden");
     } else {
@@ -1390,47 +1465,135 @@ function getLetterBankState() {
 }
 
 function mergeStoredShuffleWithAvailableLetters(storedShuffle, availableLetters) {
-  const availableSet = new Set(availableLetters);
-  const seen = new Set();
+  const remainingCounts = new Map();
+  availableLetters.forEach((item) => {
+    remainingCounts.set(item, (remainingCounts.get(item) || 0) + 1);
+  });
   const merged = [];
 
-  storedShuffle.forEach((letter) => {
-    if (!availableSet.has(letter) || seen.has(letter)) return;
-    seen.add(letter);
-    merged.push(letter);
+  storedShuffle.forEach((item) => {
+    const remaining = remainingCounts.get(item) || 0;
+    if (remaining <= 0) return;
+    merged.push(item);
+    remainingCounts.set(item, remaining - 1);
   });
-  availableLetters.forEach((letter) => {
-    if (seen.has(letter)) return;
-    seen.add(letter);
-    merged.push(letter);
+  availableLetters.forEach((item) => {
+    const remaining = remainingCounts.get(item) || 0;
+    if (remaining <= 0) return;
+    merged.push(item);
+    remainingCounts.set(item, remaining - 1);
   });
 
   return merged;
+}
+
+function prioritizeNewLettersOverPlaceholders(orderedItems, previousItems) {
+  if (!Array.isArray(orderedItems) || orderedItems.length === 0) return [];
+  if (!Array.isArray(previousItems) || previousItems.length === 0) return [...orderedItems];
+
+  const previousCounts = new Map();
+  previousItems.forEach((item) => {
+    if (item === "?") return;
+    previousCounts.set(item, (previousCounts.get(item) || 0) + 1);
+  });
+
+  const nextCounts = new Map();
+  orderedItems.forEach((item) => {
+    if (item === "?") return;
+    nextCounts.set(item, (nextCounts.get(item) || 0) + 1);
+  });
+
+  const remainingAddedCounts = new Map();
+  nextCounts.forEach((count, item) => {
+    const previousCount = previousCounts.get(item) || 0;
+    if (count > previousCount) {
+      remainingAddedCounts.set(item, count - previousCount);
+    }
+  });
+
+  const addedItemsInOrder = [];
+  orderedItems.forEach((item) => {
+    if (item === "?") return;
+    const remaining = remainingAddedCounts.get(item) || 0;
+    if (remaining <= 0) return;
+    addedItemsInOrder.push(item);
+    remainingAddedCounts.set(item, remaining - 1);
+  });
+
+  if (addedItemsInOrder.length === 0) return [...orderedItems];
+
+  const prioritized = [...orderedItems];
+  addedItemsInOrder.forEach((item) => {
+    const placeholderIndex = prioritized.indexOf("?");
+    if (placeholderIndex < 0) return;
+    const itemIndex = prioritized.lastIndexOf(item);
+    if (itemIndex <= placeholderIndex) return;
+    [prioritized[placeholderIndex], prioritized[itemIndex]] = [
+      prioritized[itemIndex],
+      prioritized[placeholderIndex],
+    ];
+  });
+
+  return prioritized;
+}
+
+function setMineCountDisplay(value) {
+  if (!mineCountValueEl) return;
+  mineCountValueEl.textContent = String(value);
+}
+
+function setFlagCountDisplay(value) {
+  if (!flagCountValueEl) return;
+  flagCountValueEl.textContent = String(value);
 }
 
 function shuffleLetterBank() {
   if (!game || game.over || !game.secretWord) return;
 
   const { letters, hintedOrder } = getLetterBankState();
-  if (letters.length < 2) return;
+  const placeholderCount = Math.max(0, Number(game.totalMines || 0) - letters.length);
   const nonHintLetters = letters.slice(hintedOrder.length);
-  game.letterBankShuffleOrder = [...hintedOrder, ...shuffle(nonHintLetters)];
+  const shufflePool = [...nonHintLetters, ...Array.from({ length: placeholderCount }, () => "?")];
+  if (shufflePool.length < 2) return;
+  game.letterBankShuffleOrder = [...hintedOrder, ...shuffle(shufflePool)];
   renderFlaggedLetters();
 }
 
 function renderFlaggedLetters() {
   if (!flaggedLettersEl) return;
   flaggedLettersEl.innerHTML = "";
+  flaggedLettersEl.classList.remove(
+    "flagged-letters-outcome",
+    "flagged-letters-outcome-won",
+    "flagged-letters-outcome-lost"
+  );
+
+  if (game?.over && game?.outcome?.useCategoryLabel) {
+    if (game.outcome?.result === "won") {
+      flaggedLettersEl.classList.add("flagged-letters-outcome-won");
+    } else if (game.outcome?.result === "lost") {
+      flaggedLettersEl.classList.add("flagged-letters-outcome-lost");
+    }
+    flaggedLettersEl.classList.add("flagged-letters-outcome");
+    flaggedLettersEl.textContent = game.outcome.message || "";
+    return;
+  }
 
   const { letters: letterBankLetters, hintedOrder, hintedSet } = getLetterBankState();
-  if (letterBankLetters.length === 0) return;
+  const mineSlotCount = Number.isFinite(game?.totalMines) ? Math.max(0, Number(game.totalMines)) : 0;
+  const placeholderCount = Math.max(0, mineSlotCount - letterBankLetters.length);
+  const letterBankItems = [
+    ...letterBankLetters,
+    ...Array.from({ length: placeholderCount }, () => "?"),
+  ];
 
   const storedShuffle = Array.isArray(game?.letterBankShuffleOrder)
     ? game.letterBankShuffleOrder
     : [];
-  const candidateLetters = storedShuffle.length > 0
-    ? mergeStoredShuffleWithAvailableLetters(storedShuffle, letterBankLetters)
-    : letterBankLetters;
+  const mergedLetters = storedShuffle.length > 0
+    ? mergeStoredShuffleWithAvailableLetters(storedShuffle, letterBankItems)
+    : letterBankItems;
+  const candidateLetters = prioritizeNewLettersOverPlaceholders(mergedLetters, storedShuffle);
   const lettersToRender = [...hintedOrder];
   candidateLetters.forEach((letter) => {
     if (hintedSet.has(letter)) return;
@@ -1445,12 +1608,16 @@ function renderFlaggedLetters() {
   const hintedLetters = game?.hintedLetters instanceof Set ? game.hintedLetters : new Set();
   lettersToRender.forEach((letter) => {
     const letterEl = document.createElement("span");
-    letterEl.className = "flagged-letter";
-    if (hintedLetters.has(letter)) {
-      letterEl.classList.add("flagged-letter-hint");
-    }
-    if (typedLetters.has(letter)) {
-      letterEl.classList.add("flagged-letter-used");
+    if (letter === "?") {
+      letterEl.className = "flagged-letter flagged-letter-placeholder";
+    } else {
+      letterEl.className = "flagged-letter";
+      if (hintedLetters.has(letter)) {
+        letterEl.classList.add("flagged-letter-hint");
+      }
+      if (typedLetters.has(letter)) {
+        letterEl.classList.add("flagged-letter-used");
+      }
     }
     letterEl.textContent = letter;
     flaggedLettersEl.appendChild(letterEl);
@@ -1459,9 +1626,8 @@ function renderFlaggedLetters() {
 
 function renderCategoryLabel() {
   if (!categoryLabelEl) return;
-  categoryLabelEl.classList.remove("category-label-outcome");
   const categoryText = game && game.secretCategory ? game.secretCategory : "";
-  categoryLabelEl.textContent = `${categoryText}`;
+  categoryLabelEl.textContent = categoryText || "?";
 }
 
 function updateSubmitGuessVisibility() {
@@ -1595,7 +1761,7 @@ function initializeWordAfterFirstClick(firstRevealIndex) {
   game.hintedLetterOrder = [];
   game.currentGuess = "";
 
-  mineCountEl.textContent = `Mines: ${game.totalMines}`;
+  setMineCountDisplay(game.totalMines);
   renderEntryMode();
   renderCategoryLabel();
   renderWordSlots(secretEntry.word, game.guessSlots);
@@ -1645,11 +1811,7 @@ function startGame(requestedMode = null, options = {}) {
     outcome: null,
   };
   initBoard(resolvedMapId);
-  boardEl.classList.remove("bee-awake", "bee-flap", "bee-dead", "bee-won");
-  if (beeFlapTimer) {
-    clearTimeout(beeFlapTimer);
-    beeFlapTimer = null;
-  }
+  boardEl.classList.remove("bee-awake", "bee-dead", "bee-won");
   if (beeEyesTimer) {
     clearTimeout(beeEyesTimer);
     beeEyesTimer = null;
@@ -1670,7 +1832,7 @@ function startGame(requestedMode = null, options = {}) {
   renderEntryMode();
   renderFlaggedLetters();
   renderCategoryLabel();
-  mineCountEl.textContent = "Mines: ?";
+  setMineCountDisplay("?");
   resultMessageEl.textContent = "";
   resultMessageEl.classList.add("hidden");
   statsStackEl.classList.remove("hidden");
@@ -1684,7 +1846,7 @@ function startGame(requestedMode = null, options = {}) {
 
 function updateStats() {
   const flags = tiles.reduce((total, tile) => total + tile.flagCount, 0);
-  flagCountEl.textContent = `Flags: ${flags}`;
+  setFlagCountDisplay(flags);
   renderFlaggedLetters();
 }
 
@@ -1709,15 +1871,14 @@ function setGameOver(message, result = null, useCategoryLabel = false) {
   if (result === "lost") {
     boardEl.classList.add("bee-dead");
     boardEl.classList.remove("bee-won");
-    boardEl.classList.remove("bee-awake", "bee-flap");
+    boardEl.classList.remove("bee-awake");
   } else if (result === "won") {
     boardEl.classList.add("bee-won");
     boardEl.classList.remove("bee-dead");
-    boardEl.classList.remove("bee-awake", "bee-flap");
+    boardEl.classList.remove("bee-awake");
   }
-  if (useCategoryLabel && categoryLabelEl) {
-    categoryLabelEl.classList.add("category-label-outcome");
-    categoryLabelEl.textContent = message;
+  if (useCategoryLabel && flaggedLettersEl) {
+    renderFlaggedLetters();
     resultMessageEl.textContent = "";
     resultMessageEl.classList.add("hidden");
   } else {
@@ -1913,8 +2074,8 @@ function selectMap(mapId) {
   } else {
     return;
   }
-  startGame(GAME_MODE_NORMAL);
   closeHex();
+  startGame(GAME_MODE_NORMAL);
 }
 
 function onMapOptionClick(event) {
@@ -2517,6 +2678,8 @@ export function initGame() {
   resultMessageEl = document.getElementById("result-message");
   flagCountEl = document.getElementById("flag-count");
   mineCountEl = document.getElementById("mine-count");
+  flagCountValueEl = document.getElementById("flag-count-value");
+  mineCountValueEl = document.getElementById("mine-count-value");
   newGameBtn = document.getElementById("new-game");
   dailyBeeBtn = document.getElementById("daily-bee");
   endlessNewGameBtn = document.getElementById("endless-new-game");
@@ -2528,6 +2691,7 @@ export function initGame() {
   wordSlotsEl = document.getElementById("word-slots");
   hintLetterBtn = document.getElementById("hint-letter");
   submitGuessBtn = document.getElementById("submit-guess");
+  shuffleBankBtn = document.getElementById("shuffle-bank");
   flaggedLettersEl = document.getElementById("flagged-letters");
   helpOpenBtn = document.getElementById("help-open");
   helpModalEl = document.getElementById("help-modal");
@@ -2567,6 +2731,8 @@ export function initGame() {
     !resultMessageEl ||
     !flagCountEl ||
     !mineCountEl ||
+    !flagCountValueEl ||
+    !mineCountValueEl ||
     !newGameBtn ||
     !dailyBeeBtn ||
     !endlessNewGameBtn ||
@@ -2577,6 +2743,7 @@ export function initGame() {
     !wordSlotsEl ||
     !hintLetterBtn ||
     !submitGuessBtn ||
+    !shuffleBankBtn ||
     !flaggedLettersEl ||
     !topControlsEl ||
     !topControlsActionsEl ||
@@ -2657,6 +2824,10 @@ export function initGame() {
   wordSlotsEl.addEventListener("paste", onWordSlotsPaste);
   wordSlotsEl.addEventListener("click", focusWordSlots);
   hintLetterBtn.addEventListener("click", onHintLetterClick);
+  shuffleBankBtn.addEventListener("click", () => {
+    shuffleLetterBank();
+    focusWordSlots();
+  });
   submitGuessBtn.addEventListener("click", onSubmitGuessClick);
   document.addEventListener("click", onGlobalClick);
   document.addEventListener("mousedown", onGlobalMouseDown);

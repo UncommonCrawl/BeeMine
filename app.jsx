@@ -2,6 +2,9 @@ import { useEffect } from "react";
 import { initGame } from "./script.js";
 import { buildPlacedMap, HEX_GEOMETRY, mapDefinitions } from "./mapLayouts.js";
 import lightbulbIcon from "./lightbulb.svg";
+import mineIcon from "./mine.svg";
+import flagIcon from "./flag.svg";
+import shuffleIcon from "./shuffle.svg";
 
 const SHUFFLE_MAP_ID = "shuffle";
 const LETTER_FREQUENCIES = [
@@ -262,34 +265,8 @@ export default function App() {
             Endless Mode
           </button>
         </div>
-        <div className="stats-row">
-          <div id="stats-stack" className="stats">
-            <button
-              id="mine-count"
-              className="stats-button stats-display"
-              type="button"
-            >
-              Mines: 0
-            </button>
-            <button
-              id="endless-new-game"
-              className="stats-button endless-new-game hidden"
-              type="button"
-            >
-              New Game
-            </button>
-            <button
-              id="flag-count"
-              className="stats-button stats-display"
-              type="button"
-            >
-              Flags: 0
-            </button>
-          </div>
-        </div>
         <p id="result-message" className="result-message hidden" />
       </section>
-
       <section id="board" className="board" aria-label="Bee Mine board" />
 
       <section className="status-panel">
@@ -331,7 +308,58 @@ export default function App() {
             className="guess-stack entry-pane-hidden"
             aria-hidden="true"
           >
-            <p id="category-label">CATEGORY:</p>
+            <div className="stats-row stats-row-bottom">
+              <div id="stats-stack" className="stats">
+                <button
+                  id="category-label"
+                  className="stats-button stats-display"
+                  type="button"
+                >
+                  ?
+                </button>
+                <button
+                  id="mine-count"
+                  className="stats-button stats-display"
+                  type="button"
+                >
+                  <span className="stat-icon-wrap" aria-hidden="true">
+                    <span
+                      className="stat-icon"
+                      style={{ "--stat-icon-url": `url(${mineIcon})` }}
+                    />
+                  </span>
+                  <span id="mine-count-value" className="stat-count-value">
+                    0
+                  </span>
+                </button>
+                <button
+                  id="flag-count"
+                  className="stats-button stats-display"
+                  type="button"
+                >
+                  <span className="stat-icon-wrap" aria-hidden="true">
+                    <span
+                      className="stat-icon"
+                      style={{ "--stat-icon-url": `url(${flagIcon})` }}
+                    />
+                  </span>
+                  <span id="flag-count-value" className="stat-count-value">
+                    0
+                  </span>
+                </button>
+                <button
+                  id="endless-new-game"
+                  className="stats-button endless-new-game hidden"
+                  type="button"
+                >
+                  New Game
+                </button>
+              </div>
+            </div>
+            <div
+              aria-hidden="true"
+              style={{ height: "13px" }}
+            />
             <div className="guess-entry-row">
               <button
                 id="hint-letter"
@@ -357,10 +385,32 @@ export default function App() {
               </button>
             </div>
             <div
-              id="flagged-letters"
-              className="flagged-letters"
-              aria-label="Flagged letters"
+              aria-hidden="true"
+              style={{ height: "13px" }}
             />
+            <div className="letter-bank-row">
+              <div className="letter-bank-center">
+                <button
+                  id="shuffle-bank"
+                  className="letter-bank-shuffle"
+                  type="button"
+                  aria-label="Shuffle letter bank"
+                  title="Shuffle letter bank"
+                >
+                  <img
+                    className="letter-bank-shuffle-icon"
+                    src={shuffleIcon}
+                    alt=""
+                    aria-hidden="true"
+                  />
+                </button>
+                <div
+                  id="flagged-letters"
+                  className="flagged-letters"
+                  aria-label="Flagged letters"
+                />
+              </div>
+            </div>
           </div>
         </div>
       </section>
