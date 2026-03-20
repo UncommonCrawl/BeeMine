@@ -11,8 +11,12 @@ function uniqueSorted(values) {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b));
 }
 
+function letterCount(value) {
+  return (value.match(/[A-Za-z]/g) || []).length;
+}
+
 function isEligibleEntry(value) {
-  return typeof value === 'string' && value.length > 4;
+  return typeof value === 'string' && value.length > 4 && letterCount(value) < 18;
 }
 
 function formatStringArray(values, indent) {

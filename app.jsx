@@ -323,9 +323,11 @@ export default function App() {
                   type="button"
                 >
                   <span className="stat-icon-wrap" aria-hidden="true">
-                    <span
-                      className="stat-icon"
-                      style={{ "--stat-icon-url": `url(${mineIcon})` }}
+                    <img
+                      className="stat-icon-image"
+                      src={mineIcon}
+                      alt=""
+                      aria-hidden="true"
                     />
                   </span>
                   <span id="mine-count-value" className="stat-count-value">
@@ -338,9 +340,11 @@ export default function App() {
                   type="button"
                 >
                   <span className="stat-icon-wrap" aria-hidden="true">
-                    <span
-                      className="stat-icon"
-                      style={{ "--stat-icon-url": `url(${flagIcon})` }}
+                    <img
+                      className="stat-icon-image"
+                      src={flagIcon}
+                      alt=""
+                      aria-hidden="true"
                     />
                   </span>
                   <span id="flag-count-value" className="stat-count-value">
@@ -356,10 +360,7 @@ export default function App() {
                 </button>
               </div>
             </div>
-            <div
-              aria-hidden="true"
-              style={{ height: "13px" }}
-            />
+            <div aria-hidden="true" style={{ height: "13px" }} />
             <div className="guess-entry-row">
               <button
                 id="hint-letter"
@@ -384,10 +385,7 @@ export default function App() {
                 ↩
               </button>
             </div>
-            <div
-              aria-hidden="true"
-              style={{ height: "13px" }}
-            />
+            <div aria-hidden="true" style={{ height: "13px" }} />
             <div className="letter-bank-row">
               <div className="letter-bank-center">
                 <button
@@ -437,37 +435,41 @@ export default function App() {
           </h2>
           <div className="help-layout">
             <div className="help-copy">
+              <div aria-hidden="true" style={{ height: "8px" }} />
+
               <h3>How It Works</h3>
-              <ul className="help-list">
-                <li>
-                  Click any tile to begin. The first clicked letter is
-                  guaranteed to be safe.
-                </li>
-                <li>
-                  Numbers show how many neighboring tiles hide letters from the
-                  secret word.
-                </li>
-                <li>
-                  Right-click a suspicious tile to flag its letter, then use the
-                  flagged letters to build your guess.
-                </li>
-                <li>
-                  Letters may be used more than once. Press Enter to submit your
-                  guess.
-                </li>
-              </ul>
+
+              <p>Selecting any tile begins the game.</p>
+              <p>
+                Each number indicates exactly how many adjacent hexagons contain
+                a mine.
+              </p>
+              <p>
+                Right-clicking a tile flags its letter. Flagged letters show up
+                in the letter bank.
+              </p>
+              <p>Rearrange the flagged letters to find the answer.</p>
+              <p>Press [ENTER] to submit!</p>
+              <div aria-hidden="true" style={{ height: "13px" }} />
+
               <h3>Tips</h3>
-              <ul className="help-list">
-                <li>
-                  Not all puzzles are perfectly solvable, so sometimes you still
-                  need to make an informed guess.
-                </li>
-                <li>
-                  If your letter bank gets cluttered, press Space to reshuffle
-                  it into a new order.
-                </li>
-              </ul>
+              <p>Letters may be used multiple times.</p>
+              <p>
+                Clicking on uncommon letters is a useful but risky way to reveal
+                more of the map.
+              </p>
+              <p>[SPACE] shuffles the letter bank.</p>
+              <p>There's no timer - so bee yourself and have fun!</p>
             </div>
+          </div>
+          <div className="game-actions help-actions">
+            <button
+              id="help-close-window"
+              className="mode-option-button mode-button-active"
+              type="button"
+            >
+              Close
+            </button>
           </div>
         </div>
       </section>
@@ -493,8 +495,8 @@ export default function App() {
             Letter Frequency
           </h2>
           <p className="frequency-note">
-            Clicking on uncommon letters is a risky but valid way to gain
-            information early.
+            Clicking on uncommon letters can bee a good strategy... or a risky
+            one!
           </p>
           <div className="frequency-pages">
             <div className="frequency-page" data-frequency-page="alphabetical">
@@ -603,7 +605,7 @@ export default function App() {
                 role="tab"
                 aria-selected="true"
               >
-                Alphabetical
+                By Alphabetical Order
               </button>
               <button
                 id="frequency-page-frequency"
@@ -714,6 +716,43 @@ export default function App() {
               </button>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section
+        id="dev-modal"
+        className="popup-modal dev-modal hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dev-title"
+        aria-hidden="true"
+      >
+        <div className="popup-card dev-card">
+          <button
+            id="dev-close"
+            className="popup-close dev-close"
+            type="button"
+            aria-label="Close dev stats"
+          >
+            &times;
+          </button>
+          <h2 id="dev-title" className="help-title">
+            Dev: Guess Rate by Length
+          </h2>
+          <table
+            className="table-modal-table dev-table"
+            aria-label="Guess rate by letter count"
+          >
+            <thead>
+              <tr>
+                <th scope="col">Letters</th>
+                <th scope="col">Guess Rate</th>
+                <th scope="col">Attempts</th>
+                <th scope="col">Avg. Hints</th>
+              </tr>
+            </thead>
+            <tbody id="dev-guess-rate-body" />
+          </table>
         </div>
       </section>
 
@@ -840,6 +879,89 @@ export default function App() {
                 Bonus
               </button>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        id="daily-outcome-modal"
+        className="popup-modal daily-outcome-modal hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="daily-outcome-title"
+        aria-hidden="true"
+      >
+        <div className="popup-card daily-outcome-card">
+          <button
+            id="daily-outcome-close"
+            className="popup-close daily-outcome-close"
+            type="button"
+            aria-label="Close Daily Bee outcome"
+          >
+            &times;
+          </button>
+          <h2
+            id="daily-outcome-title"
+            className="help-title daily-outcome-title daily-outcome-title-win"
+          >
+            YOU WIN!
+          </h2>
+          <div className="daily-outcome-spacer" aria-hidden="true" />
+          <p id="daily-outcome-summary" className="daily-stat-label">
+            You solved today&apos;s puzzle in [hint] hints, making you a
+          </p>
+          <div className="daily-outcome-spacer" aria-hidden="true" />
+          <p id="daily-outcome-rank" className="daily-stat-value">
+            [RANK] BEE
+          </p>
+          <div className="daily-outcome-spacer" aria-hidden="true" />
+          <p className="prestart-prompt">SHARE</p>
+          <div className="daily-outcome-spacer" aria-hidden="true" />
+          <div className="daily-outcome-share-row">
+            <div className="daily-outcome-share-option">
+              <button
+                id="daily-outcome-copy"
+                className="daily-outcome-clipboard-button"
+                type="button"
+                aria-label="Copy Daily Bee result"
+              >
+                <span
+                  className="daily-outcome-clipboard-icon"
+                  aria-hidden="true"
+                />
+              </button>
+              <p className="daily-outcome-share-subtitle">Copy/Paste</p>
+            </div>
+            <div className="daily-outcome-share-option">
+              <button
+                id="daily-outcome-sms"
+                className="daily-outcome-sms-button"
+                type="button"
+                aria-label="Share Daily Bee result by SMS"
+              >
+                <span className="daily-outcome-sms-icon" aria-hidden="true">
+                  SMS
+                </span>
+              </button>
+              <p className="daily-outcome-share-subtitle">SMS</p>
+            </div>
+          </div>
+          <div className="daily-outcome-spacer" aria-hidden="true" />
+          <div className="game-actions daily-outcome-actions">
+            <button
+              id="daily-outcome-close-window"
+              className="mode-option-button"
+              type="button"
+            >
+              CLOSE WINDOW
+            </button>
+            <button
+              id="daily-outcome-play-endless"
+              className="mode-option-button mode-button-active"
+              type="button"
+            >
+              PLAY ENDLESS
+            </button>
           </div>
         </div>
       </section>

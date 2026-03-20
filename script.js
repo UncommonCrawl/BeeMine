@@ -1,6 +1,15 @@
 import { levelCatalog } from "./words.js";
 import { buildPlacedMap, getDefaultMapId, mapDefinitions } from "./mapLayouts.js";
 import { dailySchedule } from "./dailySchedule.js";
+import confetti from "canvas-confetti";
+
+const HEX_CONFETTI_SHAPE =
+  typeof confetti.shapeFromPath === "function"
+    ? confetti.shapeFromPath({
+        // Small regular hexagon centered at the origin.
+        path: "M0 -6 L5.2 -3 L5.2 3 L0 6 L-5.2 3 L-5.2 -3 Z",
+      })
+    : null;
 
 const MIN_WORD_LENGTH = 6;
 const LEVEL_ENTRIES =
@@ -32,6 +41,10 @@ const STATS_TAB_ENDLESS = "endless";
 const STATS_RESULT_WON = "won";
 const STATS_RESULT_LOST = "lost";
 const TRIFORCE_MAP_ID = "triforce";
+const DEV_GUESS_LENGTH_MIN = 4;
+const DEV_GUESS_LENGTH_MAX = 17;
+const DEFAULT_WORD_GUESS_SCALE = 1.2;
+const MIN_WORD_GUESS_SCALE = 0.55;
 const FIRST_CLICK_SAFE_NEIGHBOR_DISTRIBUTION = [
   { safeNeighbors: 6, weight: 40 },
   { safeNeighbors: 5, weight: 40 },
@@ -81,6 +94,144 @@ const DECORATIVE_EDGE_SEGMENTS = Object.freeze([
     y2: 115.4701,
   }),
 ]);
+
+function runVictoryConfetti() {
+  if (typeof confetti !== "function") return;
+  if (runVictoryConfetti.intervalId) {
+    clearInterval(runVictoryConfetti.intervalId);
+    runVictoryConfetti.intervalId = null;
+  }
+  if (runVictoryConfetti.timeoutId) {
+    clearTimeout(runVictoryConfetti.timeoutId);
+    runVictoryConfetti.timeoutId = null;
+  }
+
+  const duration = 10 * 1000;
+  const animationEnd = Date.now() + duration;
+  const randomInRange = (min, max) => Math.random() * (max - min) + min;
+  const LEFT_BURST_X_RANGE = [0.02, 0.08];
+  const RIGHT_BURST_X_RANGE = [0.92, 0.98];
+  const BURST_Y_RANGE = [0.86, 0.95];
+  const colorPool = [
+    "#ffc000",
+    "#ffc819",
+    "#ffcd2e",
+    "#ffd241",
+    "#ffd652",
+    "#ffda62",
+    "#ffdd70",
+    "#ffe07d",
+  ];
+  const pickBurstColors = (count = 3) => {
+    const shuffled = [...colorPool];
+    for (let i = shuffled.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled.slice(0, count);
+  };
+  const buildFireworkBurstDefaults = () => {
+    const timeLeft = animationEnd - Date.now();
+    const ticks = Math.max(170, 280 * (timeLeft / duration));
+    const particleCount = Math.max(35, Math.round(80 * (timeLeft / duration)));
+    const defaults = {
+      particleCount,
+      startVelocity: randomInRange(28, 40),
+      spread: randomInRange(95, 120),
+      ticks,
+      zIndex: 0,
+      gravity: randomInRange(0.65, 0.85),
+      scalar: randomInRange(0.8, 1.2),
+      drift: randomInRange(-0.25, 0.25),
+      colors: pickBurstColors(),
+    };
+    if (HEX_CONFETTI_SHAPE) {
+      defaults.shapes = [HEX_CONFETTI_SHAPE];
+    }
+    return defaults;
+  };
+  const buildFirstBurstDefaults = () => {
+    const timeLeft = animationEnd - Date.now();
+    const ticks = Math.max(200, 320 * (timeLeft / duration));
+    const defaults = {
+      particleCount: Math.max(75, Math.round(130 * (timeLeft / duration))),
+      startVelocity: randomInRange(30, 44),
+      spread: randomInRange(130, 165),
+      ticks,
+      zIndex: 0,
+      gravity: randomInRange(0.65, 0.85),
+      scalar: randomInRange(0.9, 1.3),
+      drift: randomInRange(-0.25, 0.25),
+      colors: pickBurstColors(),
+    };
+    if (HEX_CONFETTI_SHAPE) {
+      defaults.shapes = [HEX_CONFETTI_SHAPE];
+    }
+    return defaults;
+  };
+  let burstFromLeft = true;
+  let isFirstBurst = true;
+  const triggerBurst = () => {
+    const timeLeft = animationEnd - Date.now();
+    if (timeLeft <= 0) {
+      runVictoryConfetti.timeoutId = null;
+      return;
+    }
+
+    let wasFirstBurst = false;
+    if (isFirstBurst) {
+      wasFirstBurst = true;
+      confetti({
+        ...buildFirstBurstDefaults(),
+        angle: randomInRange(55, 75),
+        origin: {
+          x: randomInRange(LEFT_BURST_X_RANGE[0], LEFT_BURST_X_RANGE[1]),
+          y: randomInRange(BURST_Y_RANGE[0], BURST_Y_RANGE[1]),
+        },
+      });
+      confetti({
+        ...buildFirstBurstDefaults(),
+        angle: randomInRange(105, 125),
+        origin: {
+          x: randomInRange(RIGHT_BURST_X_RANGE[0], RIGHT_BURST_X_RANGE[1]),
+          y: randomInRange(BURST_Y_RANGE[0], BURST_Y_RANGE[1]),
+        },
+      });
+      isFirstBurst = false;
+    } else if (burstFromLeft) {
+      confetti({
+        ...buildFireworkBurstDefaults(),
+        angle: randomInRange(55, 75),
+        origin: {
+          x: randomInRange(LEFT_BURST_X_RANGE[0], LEFT_BURST_X_RANGE[1]),
+          y: randomInRange(BURST_Y_RANGE[0], BURST_Y_RANGE[1]),
+        },
+      });
+    } else {
+      confetti({
+        ...buildFireworkBurstDefaults(),
+        angle: randomInRange(105, 125),
+        origin: {
+          x: randomInRange(RIGHT_BURST_X_RANGE[0], RIGHT_BURST_X_RANGE[1]),
+          y: randomInRange(BURST_Y_RANGE[0], BURST_Y_RANGE[1]),
+        },
+      });
+    }
+    burstFromLeft = !burstFromLeft;
+    if (wasFirstBurst && game?.mode === GAME_MODE_NORMAL) {
+      runVictoryConfetti.timeoutId = null;
+      return;
+    }
+    // Hold for 1s after the opening dual burst, then randomize around ~1.5s average.
+    const nextDelayMs = wasFirstBurst ? 1000 : randomInRange(1000, 2000);
+    runVictoryConfetti.timeoutId = window.setTimeout(triggerBurst, nextDelayMs);
+  };
+
+  triggerBurst();
+}
+runVictoryConfetti.intervalId = null;
+runVictoryConfetti.timeoutId = null;
+
 let boardEl = null;
 let statsStackEl = null;
 let resultMessageEl = null;
@@ -95,6 +246,7 @@ let unscrambleEl = null;
 let prestartPromptEl = null;
 let prestartPromptMainEl = null;
 let guessStackEl = null;
+let guessEntryRowEl = null;
 let categoryLabelEl = null;
 let wordSlotsEl = null;
 let hintLetterBtn = null;
@@ -106,6 +258,16 @@ let topControlsToggleBtn = null;
 let topControlsActionsEl = null;
 let helpModalEl = null;
 let helpCloseBtn = null;
+let helpCloseWindowBtn = null;
+let dailyOutcomeModalEl = null;
+let dailyOutcomeCloseBtn = null;
+let dailyOutcomeTitleEl = null;
+let dailyOutcomeSummaryEl = null;
+let dailyOutcomeRankEl = null;
+let dailyOutcomeCopyBtn = null;
+let dailyOutcomeSmsBtn = null;
+let dailyOutcomeCloseWindowBtn = null;
+let dailyOutcomePlayEndlessBtn = null;
 let legendShiftNNewGameEl = null;
 let frequencyOpenBtn = null;
 let frequencyModalEl = null;
@@ -122,6 +284,9 @@ let statsDailyWinRateEl = null;
 let statsDailyAvgHintsEl = null;
 let statsDailyCurrentStreakEl = null;
 let statsDailyLongestStreakEl = null;
+let devModalEl = null;
+let devCloseBtn = null;
+let devGuessRateBodyEl = null;
 let hexOpenBtn = null;
 let hexModalEl = null;
 let hexCloseBtn = null;
@@ -155,6 +320,14 @@ const BONUS_MAP_DEFINITIONS = mapDefinitions.filter((entry) => entry.category ==
 const DAILY_MAP_IDS = mapDefinitions.map((entry) => entry.id).sort((a, b) => a.localeCompare(b));
 const MAP_NAME_BY_ID = new Map(mapDefinitions.map((entry) => [entry.id, entry.name]));
 const MAP_SORT_INDEX_BY_ID = new Map(mapDefinitions.map((entry, index) => [entry.id, index]));
+const BOARD_STACK_ROW_COUNT = Math.max(
+  ...mapDefinitions.map((entry) => buildPlacedMap(entry.id).rowCount || 0),
+  6
+);
+const BOARD_STACK_X_SPAN = Math.max(
+  ...mapDefinitions.map((entry) => buildPlacedMap(entry.id).xSpan || 0),
+  8
+);
 selectedBonusMapId = SHUFFLE_MAP_ID;
 
 function getPlayableWordLetters(word) {
@@ -305,7 +478,8 @@ function shouldRestoreGuessFocus() {
       !isHelpOpen() &&
       !isHexOpen() &&
       !isFrequencyOpen() &&
-      !isStatsOpen()
+      !isStatsOpen() &&
+      !isDevOpen()
   );
 }
 
@@ -351,6 +525,8 @@ function initBoard(mapId) {
   const { xMin: minX, xSpan, rowCount } = layout;
   boardEl.style.setProperty("--board-x-span", String(xSpan));
   boardEl.style.setProperty("--board-row-count", String(rowCount));
+  boardEl.style.setProperty("--board-stack-row-count", String(BOARD_STACK_ROW_COUNT));
+  boardEl.style.setProperty("--board-stack-x-span", String(BOARD_STACK_X_SPAN));
   neighborsByTileIndex = layout.neighborsByActiveIndex.map((neighborIndexes) => [...neighborIndexes]);
   const decorativeTilesByCoordinate = new Map();
 
@@ -568,6 +744,9 @@ function createEmptyStatsRecord() {
     daily: {
       outcomesByDate: {},
     },
+    dev: {
+      guessByLength: {},
+    },
   };
 }
 
@@ -632,6 +811,31 @@ function sanitizeDailyStats(dailyStats) {
   return normalized;
 }
 
+function sanitizeDevStats(devStats) {
+  const normalized = {
+    guessByLength: {},
+  };
+  if (!devStats || typeof devStats !== "object") return normalized;
+  const guessByLength =
+    devStats.guessByLength && typeof devStats.guessByLength === "object" ? devStats.guessByLength : {};
+
+  for (let length = DEV_GUESS_LENGTH_MIN; length <= DEV_GUESS_LENGTH_MAX; length += 1) {
+    const key = String(length);
+    const bucket = guessByLength[key];
+    const attempts = Math.max(0, Math.floor(toFiniteNumber(bucket?.attempts)));
+    const wins = Math.max(0, Math.floor(toFiniteNumber(bucket?.wins)));
+    const hintsTotal = Math.max(0, toFiniteNumber(bucket?.hintsTotal));
+    const hintRounds = Math.max(0, Math.floor(toFiniteNumber(bucket?.hintRounds)));
+    normalized.guessByLength[key] = {
+      attempts,
+      wins: Math.min(wins, attempts),
+      hintsTotal,
+      hintRounds,
+    };
+  }
+  return normalized;
+}
+
 function sanitizeMapStatsRecord(record) {
   const normalized = createEmptyStatsRecord();
   if (!record || typeof record !== "object") return normalized;
@@ -655,6 +859,11 @@ function sanitizeMapStatsRecord(record) {
   const dailySource = record.daily && typeof record.daily === "object" ? record.daily : null;
   if (dailySource) {
     normalized.daily = sanitizeDailyStats(dailySource);
+  }
+
+  const devSource = record.dev && typeof record.dev === "object" ? record.dev : null;
+  if (devSource) {
+    normalized.dev = sanitizeDevStats(devSource);
   }
 
   return normalized;
@@ -922,12 +1131,65 @@ function updateDailyStatsPanel() {
 function updateStatsViews() {
   updateDailyStatsPanel();
   updateEndlessStatsGrid();
+  updateDevGuessRateTable();
+}
+
+function updateDevGuessRateTable() {
+  if (!devGuessRateBodyEl) return;
+  const record = getMapStatsRecord();
+  const guessByLength = record.dev?.guessByLength || {};
+  devGuessRateBodyEl.innerHTML = "";
+
+  for (let length = DEV_GUESS_LENGTH_MIN; length <= DEV_GUESS_LENGTH_MAX; length += 1) {
+    const key = String(length);
+    const bucket = guessByLength[key] || { attempts: 0, wins: 0, hintsTotal: 0, hintRounds: 0 };
+    const attempts = Math.max(0, Math.floor(toFiniteNumber(bucket.attempts)));
+    const wins = Math.max(0, Math.floor(toFiniteNumber(bucket.wins)));
+    const hintsTotal = Math.max(0, toFiniteNumber(bucket.hintsTotal));
+    const hintRounds = Math.max(0, Math.floor(toFiniteNumber(bucket.hintRounds)));
+    const rateText = attempts > 0 ? `${((wins / attempts) * 100).toFixed(1)}%` : "--";
+    const avgHintsText = hintRounds > 0 ? (hintsTotal / hintRounds).toFixed(2) : "--";
+
+    const rowEl = document.createElement("tr");
+    const lengthCellEl = document.createElement("th");
+    lengthCellEl.scope = "row";
+    lengthCellEl.textContent = String(length);
+
+    const rateCellEl = document.createElement("td");
+    rateCellEl.textContent = rateText;
+
+    const attemptsCellEl = document.createElement("td");
+    attemptsCellEl.textContent = String(attempts);
+
+    const avgHintsCellEl = document.createElement("td");
+    avgHintsCellEl.textContent = avgHintsText;
+
+    rowEl.append(lengthCellEl, rateCellEl, attemptsCellEl, avgHintsCellEl);
+    devGuessRateBodyEl.appendChild(rowEl);
+  }
 }
 
 function trackCompletedGameStats(result) {
   if (!game || (result !== STATS_RESULT_WON && result !== STATS_RESULT_LOST)) return;
 
   const record = getMapStatsRecord();
+  const guessLength = game.secretWord ? getPlayableWordLength(game.secretWord) : 0;
+  if (guessLength >= DEV_GUESS_LENGTH_MIN && guessLength <= DEV_GUESS_LENGTH_MAX) {
+    const key = String(guessLength);
+    const bucket = record.dev.guessByLength[key] || { attempts: 0, wins: 0, hintsTotal: 0, hintRounds: 0 };
+    bucket.attempts = Math.max(0, Math.floor(toFiniteNumber(bucket.attempts))) + 1;
+    if (result === STATS_RESULT_WON) {
+      bucket.wins = Math.max(0, Math.floor(toFiniteNumber(bucket.wins))) + 1;
+      bucket.hintsTotal = Math.max(0, toFiniteNumber(bucket.hintsTotal)) + Math.max(0, toFiniteNumber(game.hintsUsed));
+      bucket.hintRounds = Math.max(0, Math.floor(toFiniteNumber(bucket.hintRounds))) + 1;
+    } else {
+      bucket.wins = Math.max(0, Math.floor(toFiniteNumber(bucket.wins)));
+      bucket.hintsTotal = Math.max(0, toFiniteNumber(bucket.hintsTotal));
+      bucket.hintRounds = Math.max(0, Math.floor(toFiniteNumber(bucket.hintRounds)));
+    }
+    record.dev.guessByLength[key] = bucket;
+  }
+
   if (game.mode === GAME_MODE_DAILY) {
     const dateKey = game.dailyDateKey || getLocalDateKey();
     record.daily.outcomesByDate[dateKey] = {
@@ -1304,6 +1566,7 @@ function renderWordSlots(secretWord, guessValue = "", revealState = null) {
     }
     wordSlotsEl.appendChild(slotEl);
   });
+  updateWordGuessScale();
 }
 
 function syncGuessValue(nextGuessSlots, persistStrategy = "debounced") {
@@ -1408,6 +1671,27 @@ function getWinMessage() {
   return `You won with ${hintCount} ${hintLabel}!${replaySuffix}`;
 }
 
+function getDailyBeeRank(hintCount) {
+  if (hintCount <= 0) return "KILLER";
+  if (hintCount <= 2) return "HONEY";
+  return "BUMBLE";
+}
+
+function updateDailyOutcomeContent(result) {
+  if (!dailyOutcomeTitleEl || !dailyOutcomeSummaryEl || !dailyOutcomeRankEl) return;
+  const hintCount = Math.max(0, toFiniteNumber(game?.hintsUsed));
+  const hintLabel = hintCount === 1 ? "hint" : "hints";
+  const isWin = result === "won";
+
+  dailyOutcomeTitleEl.textContent = isWin ? "YOU WIN!" : "UH OH!";
+  dailyOutcomeTitleEl.classList.toggle("daily-outcome-title-win", isWin);
+  dailyOutcomeTitleEl.classList.toggle("daily-outcome-title-loss", !isWin);
+  dailyOutcomeSummaryEl.textContent = isWin
+    ? `You solved today's puzzle in ${hintCount} ${hintLabel}, making you a`
+    : "Better luck tomorrow! You've earned the rank of:";
+  dailyOutcomeRankEl.textContent = isWin ? `${getDailyBeeRank(hintCount)} BEE` : "FUMBLE BEE";
+}
+
 function updateHintButtonState() {
   if (!hintLetterBtn) return;
   hintLetterBtn.classList.remove("hint-letter-inactive", "hint-letter-hidden");
@@ -1456,9 +1740,26 @@ function getLetterBankState() {
     if (tile.flagCount <= 0 || hintedSet.has(tile.letter)) return;
     nonHintFlaggedSet.add(tile.letter);
   });
-  const nonHintFlaggedLetters = [...nonHintFlaggedSet].sort();
+  const typedNonHintOrder = [];
+  const typedNonHintSet = new Set();
+  const guessLetters = String(game?.currentGuess || "")
+    .toUpperCase()
+    .replace(/[^A-Z]/g, "")
+    .split("");
+  guessLetters.forEach((letter) => {
+    if (!nonHintFlaggedSet.has(letter) || typedNonHintSet.has(letter)) return;
+    typedNonHintSet.add(letter);
+    typedNonHintOrder.push(letter);
+  });
+  const nonHintFlaggedLetters = [...nonHintFlaggedSet]
+    .filter((letter) => !typedNonHintSet.has(letter))
+    .sort();
+  const anchoredOrder = [...hintedOrder, ...typedNonHintOrder];
+  const anchoredSet = new Set(anchoredOrder);
   return {
-    letters: [...hintedOrder, ...nonHintFlaggedLetters],
+    letters: [...anchoredOrder, ...nonHintFlaggedLetters],
+    anchoredOrder,
+    anchoredSet,
     hintedOrder,
     hintedSet,
   };
@@ -1550,12 +1851,12 @@ function setFlagCountDisplay(value) {
 function shuffleLetterBank() {
   if (!game || game.over || !game.secretWord) return;
 
-  const { letters, hintedOrder } = getLetterBankState();
+  const { letters, anchoredOrder } = getLetterBankState();
   const placeholderCount = Math.max(0, Number(game.totalMines || 0) - letters.length);
-  const nonHintLetters = letters.slice(hintedOrder.length);
-  const shufflePool = [...nonHintLetters, ...Array.from({ length: placeholderCount }, () => "?")];
+  const nonAnchoredLetters = letters.slice(anchoredOrder.length);
+  const shufflePool = [...nonAnchoredLetters, ...Array.from({ length: placeholderCount }, () => "?")];
   if (shufflePool.length < 2) return;
-  game.letterBankShuffleOrder = [...hintedOrder, ...shuffle(shufflePool)];
+  game.letterBankShuffleOrder = [...anchoredOrder, ...shuffle(shufflePool)];
   renderFlaggedLetters();
 }
 
@@ -1579,7 +1880,7 @@ function renderFlaggedLetters() {
     return;
   }
 
-  const { letters: letterBankLetters, hintedOrder, hintedSet } = getLetterBankState();
+  const { letters: letterBankLetters, anchoredOrder, anchoredSet } = getLetterBankState();
   const mineSlotCount = Number.isFinite(game?.totalMines) ? Math.max(0, Number(game.totalMines)) : 0;
   const placeholderCount = Math.max(0, mineSlotCount - letterBankLetters.length);
   const letterBankItems = [
@@ -1594,9 +1895,9 @@ function renderFlaggedLetters() {
     ? mergeStoredShuffleWithAvailableLetters(storedShuffle, letterBankItems)
     : letterBankItems;
   const candidateLetters = prioritizeNewLettersOverPlaceholders(mergedLetters, storedShuffle);
-  const lettersToRender = [...hintedOrder];
+  const lettersToRender = [...anchoredOrder];
   candidateLetters.forEach((letter) => {
-    if (hintedSet.has(letter)) return;
+    if (anchoredSet.has(letter)) return;
     lettersToRender.push(letter);
   });
 
@@ -1637,6 +1938,41 @@ function updateSubmitGuessVisibility() {
     game && !game.over && game.secretWord && targetLength > 0 && game.currentGuess.length >= targetLength
   );
   submitGuessBtn.classList.toggle("submit-guess-visible", shouldShow);
+}
+
+function getBaseWordGuessScale() {
+  if (typeof window === "undefined" || typeof window.getComputedStyle !== "function") {
+    return DEFAULT_WORD_GUESS_SCALE;
+  }
+  const rootStyles = window.getComputedStyle(document.documentElement);
+  const parsed = Number.parseFloat(rootStyles.getPropertyValue("--word-guess-scale"));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_WORD_GUESS_SCALE;
+}
+
+function updateWordGuessScale() {
+  if (!guessStackEl || !guessEntryRowEl || !wordSlotsEl || !hintLetterBtn || !submitGuessBtn) return;
+  if (!game?.secretWord) {
+    guessStackEl.style.removeProperty("--word-guess-scale");
+    return;
+  }
+
+  const baseScale = getBaseWordGuessScale();
+  guessStackEl.style.setProperty("--word-guess-scale", String(baseScale));
+
+  const availableWidth = guessEntryRowEl.clientWidth;
+  const rowStyles = window.getComputedStyle(guessEntryRowEl);
+  const gapValue = Number.parseFloat(rowStyles.columnGap || rowStyles.gap || "0");
+  const rowGap = Number.isFinite(gapValue) ? gapValue : 0;
+  const requiredWidth =
+    hintLetterBtn.getBoundingClientRect().width +
+    wordSlotsEl.scrollWidth +
+    submitGuessBtn.getBoundingClientRect().width +
+    rowGap * 2;
+  if (availableWidth <= 0 || requiredWidth <= 0) return;
+
+  const fitRatio = Math.min(1, availableWidth / requiredWidth);
+  const scaledValue = Math.max(MIN_WORD_GUESS_SCALE, baseScale * fitRatio);
+  guessStackEl.style.setProperty("--word-guess-scale", scaledValue.toFixed(4));
 }
 
 function syncModeButtonWidths() {
@@ -1700,6 +2036,7 @@ function renderEntryMode() {
   prestartPromptEl.setAttribute("aria-hidden", String(hasStarted));
   guessStackEl.classList.toggle("entry-pane-hidden", !hasStarted);
   guessStackEl.setAttribute("aria-hidden", String(!hasStarted));
+  updateWordGuessScale();
   updateSubmitGuessVisibility();
   updateHintButtonState();
 }
@@ -1775,6 +2112,7 @@ function initializeWordAfterFirstClick(firstRevealIndex) {
 function startGame(requestedMode = null, options = {}) {
   clearDailyPersistTimer();
   ignoreNextReplayClick = false;
+  closeDailyOutcome();
   const mode =
     requestedMode === GAME_MODE_DAILY || requestedMode === GAME_MODE_NORMAL
       ? requestedMode
@@ -1873,6 +2211,7 @@ function setGameOver(message, result = null, useCategoryLabel = false) {
     boardEl.classList.remove("bee-won");
     boardEl.classList.remove("bee-awake");
   } else if (result === "won") {
+    runVictoryConfetti();
     boardEl.classList.add("bee-won");
     boardEl.classList.remove("bee-dead");
     boardEl.classList.remove("bee-awake");
@@ -1902,6 +2241,7 @@ function setGameOver(message, result = null, useCategoryLabel = false) {
     const isFinished = result === "won" || result === "lost";
     if (isFinished) {
       flushDailyRecordPersist(true);
+      openDailyOutcome(result);
     } else {
       flushDailyRecordPersist(false);
     }
@@ -2142,6 +2482,17 @@ function handleShiftCommand(event) {
   const isShiftCommand =
     event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey;
 
+  if (isShiftOptionCommand && (code === "KeyL" || key === "l")) {
+    event.preventDefault();
+    event.beeShiftCommandHandled = true;
+    if (isDevOpen()) {
+      closeDev();
+    } else {
+      openDev();
+    }
+    return true;
+  }
+
   if (isShiftOptionCommand && (code === "KeyD" || key === "d")) {
     event.preventDefault();
     event.beeShiftCommandHandled = true;
@@ -2288,6 +2639,14 @@ function isStatsOpen() {
   return Boolean(statsModalEl && !statsModalEl.classList.contains("hidden"));
 }
 
+function isDevOpen() {
+  return Boolean(devModalEl && !devModalEl.classList.contains("hidden"));
+}
+
+function isDailyOutcomeOpen() {
+  return Boolean(dailyOutcomeModalEl && !dailyOutcomeModalEl.classList.contains("hidden"));
+}
+
 function syncTopControlActiveStates() {
   if (helpOpenBtn) {
     helpOpenBtn.classList.toggle("is-active", isHelpOpen());
@@ -2344,6 +2703,8 @@ function syncTopControlsLayout() {
 
 function openHelp() {
   if (!helpModalEl) return;
+  closeDailyOutcome();
+  closeDev();
   closeStats();
   closeFrequency();
   closeHex();
@@ -2371,6 +2732,8 @@ function onHelpModalClick(event) {
 
 function openHex() {
   if (!hexModalEl) return;
+  closeDailyOutcome();
+  closeDev();
   closeStats();
   closeFrequency();
   closeHelp();
@@ -2399,11 +2762,13 @@ function onHexModalClick(event) {
 
 function openStats() {
   if (!statsModalEl) return;
+  closeDailyOutcome();
+  closeDev();
   closeHelp();
   closeHex();
   closeFrequency();
-  updateStatsTabsUI();
-  updateStatsPageVisibility();
+  const modeStatsTab = game?.mode === GAME_MODE_NORMAL ? STATS_TAB_ENDLESS : STATS_TAB_DAILY;
+  setSelectedStatsTab(modeStatsTab);
   updateStatsViews();
   statsModalEl.classList.remove("hidden");
   statsModalEl.setAttribute("aria-hidden", "false");
@@ -2424,6 +2789,36 @@ function closeStats() {
 function onStatsModalClick(event) {
   if (event.target === statsModalEl) {
     closeStats();
+  }
+}
+
+function openDev() {
+  if (!devModalEl) return;
+  closeDailyOutcome();
+  closeStats();
+  closeHelp();
+  closeHex();
+  closeFrequency();
+  updateDevGuessRateTable();
+  devModalEl.classList.remove("hidden");
+  devModalEl.setAttribute("aria-hidden", "false");
+  syncTopControlActiveStates();
+}
+
+function closeDev() {
+  if (!devModalEl) return;
+  const wasOpen = !devModalEl.classList.contains("hidden");
+  devModalEl.classList.add("hidden");
+  devModalEl.setAttribute("aria-hidden", "true");
+  syncTopControlActiveStates();
+  if (wasOpen) {
+    closeTopControlsMenu();
+  }
+}
+
+function onDevModalClick(event) {
+  if (event.target === devModalEl) {
+    closeDev();
   }
 }
 
@@ -2512,6 +2907,8 @@ function setSelectedFrequencyPage(page) {
 
 function openFrequency() {
   if (!frequencyModalEl) return;
+  closeDailyOutcome();
+  closeDev();
   closeStats();
   closeHelp();
   closeHex();
@@ -2542,9 +2939,81 @@ function onFrequencyModalClick(event) {
   }
 }
 
+function openDailyOutcome(result) {
+  if (!dailyOutcomeModalEl) return;
+  updateDailyOutcomeContent(result);
+  closeDev();
+  closeHelp();
+  closeHex();
+  closeFrequency();
+  closeStats();
+  dailyOutcomeModalEl.classList.remove("hidden");
+  dailyOutcomeModalEl.setAttribute("aria-hidden", "false");
+}
+
+function closeDailyOutcome() {
+  if (!dailyOutcomeModalEl) return;
+  dailyOutcomeModalEl.classList.add("hidden");
+  dailyOutcomeModalEl.setAttribute("aria-hidden", "true");
+}
+
+function onDailyOutcomeModalClick(event) {
+  if (event.target === dailyOutcomeModalEl) {
+    closeDailyOutcome();
+  }
+}
+
+function onDailyOutcomeCloseWindowClick() {
+  closeDailyOutcome();
+  if (typeof window !== "undefined" && typeof window.close === "function") {
+    window.close();
+  }
+}
+
+function onDailyOutcomePlayEndlessClick() {
+  closeDailyOutcome();
+  switchToEndlessMode();
+}
+
+function getDailyOutcomeShareMessage() {
+  const rank = String(dailyOutcomeRankEl?.textContent || "BEE").trim();
+  return `I earned the rank of ${rank} in today's Daily Bee! Think you can beat me? [placeholderurl]`;
+}
+
+async function onDailyOutcomeCopyClick() {
+  const message = getDailyOutcomeShareMessage();
+  if (navigator?.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(message);
+      return;
+    } catch {
+      // Fall through to textarea copy fallback.
+    }
+  }
+
+  const textAreaEl = document.createElement("textarea");
+  textAreaEl.value = message;
+  textAreaEl.setAttribute("readonly", "");
+  textAreaEl.style.position = "fixed";
+  textAreaEl.style.left = "-9999px";
+  document.body.appendChild(textAreaEl);
+  textAreaEl.select();
+  document.execCommand("copy");
+  document.body.removeChild(textAreaEl);
+}
+
+function onDailyOutcomeSmsClick() {
+  const message = encodeURIComponent(getDailyOutcomeShareMessage());
+  const smsUrl = `sms:?&body=${message}`;
+  window.location.href = smsUrl;
+}
+
 function onGlobalClick(event) {
   if (!game) return;
-  if (isHelpOpen() || isHexOpen() || isFrequencyOpen() || isStatsOpen()) return;
+  const targetIsElement = event.target instanceof Element;
+  const clickOnActiveTile = targetIsElement && Boolean(event.target.closest(".tile[data-index]"));
+  const clickInBoard = targetIsElement && Boolean(boardEl?.contains(event.target));
+  if (isHelpOpen() || isHexOpen() || isFrequencyOpen() || isStatsOpen() || isDevOpen() || isDailyOutcomeOpen()) return;
   if (
     helpModalEl?.contains(event.target) ||
     helpOpenBtn?.contains(event.target) ||
@@ -2553,13 +3022,22 @@ function onGlobalClick(event) {
     hexModalEl?.contains(event.target) ||
     hexOpenBtn?.contains(event.target) ||
     statsModalEl?.contains(event.target) ||
-    statsOpenBtn?.contains(event.target)
+    statsOpenBtn?.contains(event.target) ||
+    devModalEl?.contains(event.target) ||
+    dailyOutcomeModalEl?.contains(event.target)
   ) {
     return;
   }
   if (game.over) {
+    if (!clickInBoard) return;
     if (!game.secretWord) return;
     if (game.mode === GAME_MODE_DAILY) return;
+    const completedResult = game.outcome?.result;
+    const boardShowsCompletedState =
+      boardEl?.classList.contains("bee-dead") || boardEl?.classList.contains("bee-won");
+    if ((completedResult !== "won" && completedResult !== "lost") || !boardShowsCompletedState) {
+      return;
+    }
     if (ignoreNextReplayClick) {
       ignoreNextReplayClick = false;
       return;
@@ -2568,6 +3046,7 @@ function onGlobalClick(event) {
     return;
   }
   if (!game.secretWord) return;
+  if (clickOnActiveTile) return;
   requestAnimationFrame(() => {
     focusWordSlots();
   });
@@ -2600,13 +3079,15 @@ function onGlobalKeyDown(event) {
   if (handleShiftCommand(event)) return;
   if (event.defaultPrevented) return;
 
-  if (isHelpOpen() || isHexOpen() || isFrequencyOpen() || isStatsOpen()) {
+  if (isHelpOpen() || isHexOpen() || isFrequencyOpen() || isStatsOpen() || isDevOpen() || isDailyOutcomeOpen()) {
     if (event.key === "Escape") {
       event.preventDefault();
       closeHelp();
       closeHex();
       closeFrequency();
       closeStats();
+      closeDev();
+      closeDailyOutcome();
     }
     return;
   }
@@ -2687,6 +3168,7 @@ export function initGame() {
   prestartPromptEl = document.getElementById("prestart-prompt");
   prestartPromptMainEl = document.getElementById("prestart-prompt-main");
   guessStackEl = document.getElementById("guess-stack");
+  guessEntryRowEl = document.querySelector(".guess-entry-row");
   categoryLabelEl = document.getElementById("category-label");
   wordSlotsEl = document.getElementById("word-slots");
   hintLetterBtn = document.getElementById("hint-letter");
@@ -2696,6 +3178,16 @@ export function initGame() {
   helpOpenBtn = document.getElementById("help-open");
   helpModalEl = document.getElementById("help-modal");
   helpCloseBtn = document.getElementById("help-close");
+  helpCloseWindowBtn = document.getElementById("help-close-window");
+  dailyOutcomeModalEl = document.getElementById("daily-outcome-modal");
+  dailyOutcomeCloseBtn = document.getElementById("daily-outcome-close");
+  dailyOutcomeTitleEl = document.getElementById("daily-outcome-title");
+  dailyOutcomeSummaryEl = document.getElementById("daily-outcome-summary");
+  dailyOutcomeRankEl = document.getElementById("daily-outcome-rank");
+  dailyOutcomeCopyBtn = document.getElementById("daily-outcome-copy");
+  dailyOutcomeSmsBtn = document.getElementById("daily-outcome-sms");
+  dailyOutcomeCloseWindowBtn = document.getElementById("daily-outcome-close-window");
+  dailyOutcomePlayEndlessBtn = document.getElementById("daily-outcome-play-endless");
   legendShiftNNewGameEl = document.getElementById("legend-shift-n-new-game");
   frequencyOpenBtn = document.getElementById("frequency-open");
   frequencyModalEl = document.getElementById("frequency-modal");
@@ -2712,6 +3204,9 @@ export function initGame() {
   statsDailyAvgHintsEl = document.getElementById("stats-daily-avg-hints");
   statsDailyCurrentStreakEl = document.getElementById("stats-daily-current-streak");
   statsDailyLongestStreakEl = document.getElementById("stats-daily-longest-streak");
+  devModalEl = document.getElementById("dev-modal");
+  devCloseBtn = document.getElementById("dev-close");
+  devGuessRateBodyEl = document.getElementById("dev-guess-rate-body");
   hexOpenBtn = document.getElementById("hex-open");
   hexModalEl = document.getElementById("hex-modal");
   hexCloseBtn = document.getElementById("hex-close");
@@ -2739,6 +3234,7 @@ export function initGame() {
     !unscrambleEl ||
     !prestartPromptEl ||
     !guessStackEl ||
+    !guessEntryRowEl ||
     !categoryLabelEl ||
     !wordSlotsEl ||
     !hintLetterBtn ||
@@ -2751,6 +3247,16 @@ export function initGame() {
     !helpOpenBtn ||
     !helpModalEl ||
     !helpCloseBtn ||
+    !helpCloseWindowBtn ||
+    !dailyOutcomeModalEl ||
+    !dailyOutcomeCloseBtn ||
+    !dailyOutcomeTitleEl ||
+    !dailyOutcomeSummaryEl ||
+    !dailyOutcomeRankEl ||
+    !dailyOutcomeCopyBtn ||
+    !dailyOutcomeSmsBtn ||
+    !dailyOutcomeCloseWindowBtn ||
+    !dailyOutcomePlayEndlessBtn ||
     !frequencyOpenBtn ||
     !frequencyModalEl ||
     !frequencyCloseBtn ||
@@ -2766,6 +3272,9 @@ export function initGame() {
     !statsDailyAvgHintsEl ||
     !statsDailyCurrentStreakEl ||
     !statsDailyLongestStreakEl ||
+    !devModalEl ||
+    !devCloseBtn ||
+    !devGuessRateBodyEl ||
     !hexOpenBtn ||
     !hexModalEl ||
     !hexCloseBtn ||
@@ -2788,7 +3297,14 @@ export function initGame() {
   helpOpenBtn.addEventListener("click", openHelp);
   topControlsToggleBtn.addEventListener("click", toggleTopControlsMenu);
   helpCloseBtn.addEventListener("click", closeHelp);
+  helpCloseWindowBtn.addEventListener("click", closeHelp);
   helpModalEl.addEventListener("click", onHelpModalClick);
+  dailyOutcomeCloseBtn.addEventListener("click", closeDailyOutcome);
+  dailyOutcomeModalEl.addEventListener("click", onDailyOutcomeModalClick);
+  dailyOutcomeCopyBtn.addEventListener("click", onDailyOutcomeCopyClick);
+  dailyOutcomeSmsBtn.addEventListener("click", onDailyOutcomeSmsClick);
+  dailyOutcomeCloseWindowBtn.addEventListener("click", onDailyOutcomeCloseWindowClick);
+  dailyOutcomePlayEndlessBtn.addEventListener("click", onDailyOutcomePlayEndlessClick);
   frequencyOpenBtn.addEventListener("click", openFrequency);
   frequencyCloseBtn.addEventListener("click", closeFrequency);
   frequencyModalEl.addEventListener("click", onFrequencyModalClick);
@@ -2796,6 +3312,8 @@ export function initGame() {
   statsCloseBtn.addEventListener("click", closeStats);
   statsResetBtn.addEventListener("click", resetMapStats);
   statsModalEl.addEventListener("click", onStatsModalClick);
+  devCloseBtn.addEventListener("click", closeDev);
+  devModalEl.addEventListener("click", onDevModalClick);
   statsTabDailyBtn.addEventListener("click", () => {
     setSelectedStatsTab(STATS_TAB_DAILY);
   });
@@ -2834,6 +3352,7 @@ export function initGame() {
   document.addEventListener("mouseup", onGlobalMouseUp);
   document.addEventListener("keydown", onGlobalKeyDown);
   window.addEventListener("resize", () => {
+    updateWordGuessScale();
     scaleVisibleFrequencyPage();
     syncModeButtonWidths();
     syncTopControlsLayout();
@@ -2853,4 +3372,16 @@ export function initGame() {
   } else {
     startNormalGame();
   }
+
 }
+  document.addEventListener('keydown', (e) => {
+  // 1. Start the stopwatch at the very top of the event
+  console.time('Keypress Execution'); 
+
+  // ... your existing letter insertion logic ...
+  // ... your debounce function calls ...
+  // ... your DOM updates ...
+
+  // 2. Stop the stopwatch at the very bottom
+  console.timeEnd('Keypress Execution'); 
+});
