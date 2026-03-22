@@ -653,7 +653,7 @@ button:focus-visible,
 .board {
   margin: 20px auto;
   --board-target-h: 50dvh;
-  --board-effective-row-count: var(--board-stack-row-count, 6);
+  --board-effective-row-count: var(--board-row-count, 6);
   --board-row-height-units: calc(
     1.154700538 + (var(--board-effective-row-count, 6) - 1) * 0.866025404
   );
@@ -687,6 +687,12 @@ button:focus-visible,
   width: calc(var(--hex-w) + (var(--board-stack-x-span, 8) - 1) * var(--hex-col-step-tight));
   height: calc(var(--hex-h) + (var(--board-effective-row-count, 6) - 1) * var(--hex-row-step-tight));
   position: relative;
+}
+
+@media (max-width: 900px) {
+  .board {
+    --board-effective-row-count: var(--board-stack-row-count, 6);
+  }
 }
 
 .tile {
