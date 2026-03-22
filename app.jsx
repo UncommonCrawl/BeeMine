@@ -131,6 +131,7 @@ const DAILY_OUTCOME_DECOR_TILES = DAILY_OUTCOME_DECOR_ROWS.flatMap(
         {
           key: `daily-decor-${rowIndex}-${columnIndex}-${token}`,
           token,
+          x,
           variantClassName,
           style: {
             "--decor-x": String(x),
@@ -140,6 +141,16 @@ const DAILY_OUTCOME_DECOR_TILES = DAILY_OUTCOME_DECOR_ROWS.flatMap(
       ];
     });
   },
+);
+const DAILY_OUTCOME_DECOR_WING_LEFT_TILES = DAILY_OUTCOME_DECOR_TILES.filter(
+  (tile) => tile.variantClassName === "daily-outcome-decor-tile-decor" && tile.x < 0,
+);
+const DAILY_OUTCOME_DECOR_WING_RIGHT_TILES = DAILY_OUTCOME_DECOR_TILES.filter(
+  (tile) => tile.variantClassName === "daily-outcome-decor-tile-decor" && tile.x > 0,
+);
+const DAILY_OUTCOME_DECOR_CENTER_TILES = DAILY_OUTCOME_DECOR_TILES.filter(
+  (tile) =>
+    !(tile.variantClassName === "daily-outcome-decor-tile-decor" && (tile.x < 0 || tile.x > 0)),
 );
 
 function getPreviewHexPoints(centerX, centerY) {
@@ -913,8 +924,26 @@ export default function App() {
         aria-hidden="true"
       >
         <div id="daily-outcome-card" className="popup-card daily-outcome-card">
-          <div className="daily-outcome-decor" aria-hidden="true">
-            {DAILY_OUTCOME_DECOR_TILES.map((tile) => (
+          <div id="daily-outcome-decor" className="daily-outcome-decor" aria-hidden="true">
+            <div className="daily-outcome-decor-wing daily-outcome-decor-wing-left">
+              {DAILY_OUTCOME_DECOR_WING_LEFT_TILES.map((tile) => (
+                <span
+                  key={tile.key}
+                  className={`daily-outcome-decor-tile ${tile.variantClassName}`}
+                  style={tile.style}
+                />
+              ))}
+            </div>
+            <div className="daily-outcome-decor-wing daily-outcome-decor-wing-right">
+              {DAILY_OUTCOME_DECOR_WING_RIGHT_TILES.map((tile) => (
+                <span
+                  key={tile.key}
+                  className={`daily-outcome-decor-tile ${tile.variantClassName}`}
+                  style={tile.style}
+                />
+              ))}
+            </div>
+            {DAILY_OUTCOME_DECOR_CENTER_TILES.map((tile) => (
               <span
                 key={tile.key}
                 className={`daily-outcome-decor-tile ${tile.variantClassName}`}

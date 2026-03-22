@@ -261,6 +261,7 @@ let helpCloseBtn = null;
 let helpCloseWindowBtn = null;
 let dailyOutcomeModalEl = null;
 let dailyOutcomeCardEl = null;
+let dailyOutcomeDecorEl = null;
 let dailyOutcomeCloseBtn = null;
 let dailyOutcomeTitleEl = null;
 let dailyOutcomeSummaryEl = null;
@@ -268,6 +269,7 @@ let dailyOutcomeRankEl = null;
 let dailyOutcomeCopyBtn = null;
 let dailyOutcomeSmsBtn = null;
 let dailyOutcomePlayEndlessBtn = null;
+let dailyOutcomeDecorFlapTimer = null;
 let legendShiftNNewGameEl = null;
 let frequencyOpenBtn = null;
 let frequencyModalEl = null;
@@ -314,6 +316,9 @@ let beePressTimer = null;
 let dailyPersistTimer = null;
 let ignoreNextReplayClick = false;
 let replayClickGuardTimer = null;
+let decorativeTilesByCoordinateForSeams = null;
+let seamRectRenderRafId = null;
+let boardResizeObserver = null;
 let dailyRecord = null;
 let mapStatsRecord = null;
 const STANDARD_MAP_DEFINITIONS = mapDefinitions.filter((entry) => entry.category !== PAGE_BONUS);
@@ -533,6 +538,146 @@ function applyDecorativeSharedEdges(decorativeTilesByCoordinate) {
   });
 }
 
+function clearDecorativeSharedSeamRects() {
+  if (!boardEl) return;
+  boardEl.querySelectorAll(".decorative-shared-seam-rect").forEach((element) => {
+    element.remove();
+  });
+}
+
+function clearDecorativeJunctionDots() {
+  if (!boardEl) return;
+  boardEl.querySelectorAll(".decorative-junction-dot").forEach((element) => {
+    element.remove();
+  });
+}
+
+function scheduleDecorativeSharedSeamRectRender() {
+  if (!boardEl || !(decorativeTilesByCoordinateForSeams instanceof Map)) return;
+  if (seamRectRenderRafId) return;
+  seamRectRenderRafId = requestAnimationFrame(() => {
+    seamRectRenderRafId = null;
+    renderDecorativeSharedSeamRects(decorativeTilesByCoordinateForSeams);
+    renderDecorativeJunctionDots(decorativeTilesByCoordinateForSeams);
+  });
+}
+
+function renderDecorativeJunctionDots(decorativeTilesByCoordinate) {
+  clearDecorativeJunctionDots();
+  if (!boardEl || !(decorativeTilesByCoordinate instanceof Map) || decorativeTilesByCoordinate.size === 0) {
+    return;
+  }
+
+  const boardRect = boardEl.getBoundingClientRect();
+  const boardStyles = getComputedStyle(boardEl);
+  const dotSizeRatioRaw = Number.parseFloat(
+    boardStyles.getPropertyValue("--decorative-junction-dot-size-ratio")
+  );
+  const dotSizeRatio = Number.isFinite(dotSizeRatioRaw) ? dotSizeRatioRaw : 0.08;
+  // Vertex coordinates from separate tiles can differ by sub-pixels; use 1px bucketing.
+  const quantizeFactor = 1;
+  let dotSizePx = 0;
+  const ownersByVertexKey = new Map();
+  const vertexRatios = [
+    { x: 0.5, y: 0 },
+    { x: 1, y: 0.25 },
+    { x: 1, y: 0.75 },
+    { x: 0.5, y: 1 },
+    { x: 0, y: 0.75 },
+    { x: 0, y: 0.25 },
+  ];
+
+  decorativeTilesByCoordinate.forEach((tileData) => {
+    const tileEl = tileData?.element;
+    if (!tileEl) return;
+    const rect = tileEl.getBoundingClientRect();
+    if (dotSizePx <= 0) {
+      dotSizePx = Math.max(1, rect.width * dotSizeRatio);
+    }
+    const left = rect.left - boardRect.left;
+    const top = rect.top - boardRect.top;
+
+    vertexRatios.forEach((vertex) => {
+      const x = left + rect.width * vertex.x;
+      const y = top + rect.height * vertex.y;
+      const key = `${Math.round(x * quantizeFactor)}:${Math.round(y * quantizeFactor)}`;
+      const existing = ownersByVertexKey.get(key);
+      if (existing) {
+        existing.count += 1;
+        existing.sumX += x;
+        existing.sumY += y;
+      } else {
+        ownersByVertexKey.set(key, { count: 1, sumX: x, sumY: y });
+      }
+    });
+  });
+
+  ownersByVertexKey.forEach((entry) => {
+    if (entry.count < 3) return;
+    const dotEl = document.createElement("span");
+    dotEl.className = "decorative-junction-dot";
+    dotEl.style.setProperty("--junction-dot-x", `${entry.sumX / entry.count}px`);
+    dotEl.style.setProperty("--junction-dot-y", `${entry.sumY / entry.count}px`);
+    dotEl.style.setProperty("--junction-dot-size", `${dotSizePx || 1}px`);
+    boardEl.appendChild(dotEl);
+  });
+}
+
+function renderDecorativeSharedSeamRects(decorativeTilesByCoordinate) {
+  clearDecorativeSharedSeamRects();
+  if (!boardEl || !(decorativeTilesByCoordinate instanceof Map) || decorativeTilesByCoordinate.size === 0) {
+    return;
+  }
+
+  const boardRect = boardEl.getBoundingClientRect();
+  const boardStyles = getComputedStyle(boardEl);
+  const seamWidthRatioRaw = Number.parseFloat(
+    boardStyles.getPropertyValue("--decorative-shared-seam-width-ratio")
+  );
+  const seamSpillRatioRaw = Number.parseFloat(
+    boardStyles.getPropertyValue("--decorative-shared-seam-spill-ratio")
+  );
+  const seamWidthRatio = Number.isFinite(seamWidthRatioRaw) ? seamWidthRatioRaw : 0.06;
+  const seamSpillRatio = Number.isFinite(seamSpillRatioRaw) ? seamSpillRatioRaw : 0.01;
+
+  decorativeTilesByCoordinate.forEach((tileData) => {
+    const tileEl = tileData?.element;
+    if (!tileEl) return;
+    const tileRect = tileEl.getBoundingClientRect();
+    const sideLength = tileRect.width / Math.sqrt(3);
+    const seamWidthPx = Math.max(1, tileRect.width * seamWidthRatio);
+    const seamSpillPx = Math.max(0, tileRect.width * seamSpillRatio);
+    const centerAX = tileRect.left - boardRect.left + tileRect.width / 2;
+    const centerAY = tileRect.top - boardRect.top + tileRect.height / 2;
+
+    DECORATIVE_EDGE_SEGMENTS.forEach((segment) => {
+      const neighborKey = `${tileData.row + segment.dy}:${tileData.x + segment.dx}`;
+      const neighborData = decorativeTilesByCoordinate.get(neighborKey);
+      if (!neighborData?.element) return;
+      const isCanonicalOwner =
+        tileData.row < neighborData.row ||
+        (tileData.row === neighborData.row && tileData.x < neighborData.x);
+      if (!isCanonicalOwner) return;
+
+      const neighborRect = neighborData.element.getBoundingClientRect();
+      const centerBX = neighborRect.left - boardRect.left + neighborRect.width / 2;
+      const centerBY = neighborRect.top - boardRect.top + neighborRect.height / 2;
+
+      const seamEl = document.createElement("span");
+      seamEl.className = "decorative-shared-seam-rect";
+      seamEl.style.setProperty("--seam-center-x", `${(centerAX + centerBX) / 2}px`);
+      seamEl.style.setProperty("--seam-center-y", `${(centerAY + centerBY) / 2}px`);
+      seamEl.style.setProperty(
+        "--seam-angle",
+        `${(Math.atan2(centerBY - centerAY, centerBX - centerAX) * 180) / Math.PI + 90}deg`
+      );
+      seamEl.style.setProperty("--seam-length", `${Math.max(0, sideLength + seamSpillPx * 2)}px`);
+      seamEl.style.setProperty("--seam-width", `${seamWidthPx}px`);
+      boardEl.appendChild(seamEl);
+    });
+  });
+}
+
 function initBoard(mapId) {
   boardEl.innerHTML = "";
   tiles = [];
@@ -629,6 +774,10 @@ function initBoard(mapId) {
   });
 
   applyDecorativeSharedEdges(decorativeTilesByCoordinate);
+  decorativeTilesByCoordinateForSeams = decorativeTilesByCoordinate;
+  renderDecorativeSharedSeamRects(decorativeTilesByCoordinateForSeams);
+  renderDecorativeJunctionDots(decorativeTilesByCoordinateForSeams);
+  scheduleDecorativeSharedSeamRectRender();
 }
 
 function getActiveMapDefinitions() {
@@ -3015,6 +3164,7 @@ function onFrequencyModalClick(event) {
 
 function openDailyOutcome(result) {
   if (!dailyOutcomeModalEl) return;
+  dailyOutcomeCardEl?.classList.remove("daily-outcome-decor-flap");
   updateDailyOutcomeContent(result);
   closeDev();
   closeHelp();
@@ -3037,6 +3187,28 @@ function onDailyOutcomeModalClick(event) {
   }
 }
 
+function triggerDailyOutcomeDecorFlap() {
+  if (!dailyOutcomeCardEl) return;
+  if (dailyOutcomeDecorFlapTimer) {
+    clearTimeout(dailyOutcomeDecorFlapTimer);
+    dailyOutcomeDecorFlapTimer = null;
+  }
+  dailyOutcomeCardEl.classList.remove("daily-outcome-decor-flap");
+  void dailyOutcomeCardEl.offsetWidth;
+  dailyOutcomeCardEl.classList.add("daily-outcome-decor-flap");
+  dailyOutcomeDecorFlapTimer = window.setTimeout(() => {
+    dailyOutcomeCardEl?.classList.remove("daily-outcome-decor-flap");
+    dailyOutcomeDecorFlapTimer = null;
+  }, 220);
+}
+
+function onDailyOutcomeDecorClick(event) {
+  const targetEl = event.target;
+  if (!(targetEl instanceof Element)) return;
+  if (!targetEl.closest(".daily-outcome-decor-tile")) return;
+  triggerDailyOutcomeDecorFlap();
+}
+
 function onDailyOutcomePlayEndlessClick() {
   closeDailyOutcome();
   switchToEndlessMode();
@@ -3044,7 +3216,7 @@ function onDailyOutcomePlayEndlessClick() {
 
 function getDailyOutcomeShareMessage() {
   const rank = String(dailyOutcomeRankEl?.textContent || "BEE").trim();
-  return `I earned the rank of ${rank} in today's Daily Bee! Think you can beat me? [placeholderurl]`;
+  return `I earned the rank of ${rank} in today's Daily Bee! Think you can beat me? beemine.io`;
 }
 
 async function onDailyOutcomeCopyClick() {
@@ -3256,6 +3428,7 @@ export function initGame() {
   helpCloseWindowBtn = document.getElementById("help-close-window");
   dailyOutcomeModalEl = document.getElementById("daily-outcome-modal");
   dailyOutcomeCardEl = document.getElementById("daily-outcome-card");
+  dailyOutcomeDecorEl = document.getElementById("daily-outcome-decor");
   dailyOutcomeCloseBtn = document.getElementById("daily-outcome-close");
   dailyOutcomeTitleEl = document.getElementById("daily-outcome-title");
   dailyOutcomeSummaryEl = document.getElementById("daily-outcome-summary");
@@ -3325,6 +3498,7 @@ export function initGame() {
     !helpCloseWindowBtn ||
     !dailyOutcomeModalEl ||
     !dailyOutcomeCardEl ||
+    !dailyOutcomeDecorEl ||
     !dailyOutcomeCloseBtn ||
     !dailyOutcomeTitleEl ||
     !dailyOutcomeSummaryEl ||
@@ -3376,6 +3550,7 @@ export function initGame() {
   helpModalEl.addEventListener("click", onHelpModalClick);
   dailyOutcomeCloseBtn.addEventListener("click", closeDailyOutcome);
   dailyOutcomeModalEl.addEventListener("click", onDailyOutcomeModalClick);
+  dailyOutcomeDecorEl.addEventListener("click", onDailyOutcomeDecorClick);
   dailyOutcomeCopyBtn.addEventListener("click", onDailyOutcomeCopyClick);
   dailyOutcomeSmsBtn.addEventListener("click", onDailyOutcomeSmsClick);
   dailyOutcomePlayEndlessBtn.addEventListener("click", onDailyOutcomePlayEndlessClick);
@@ -3430,7 +3605,18 @@ export function initGame() {
     scaleVisibleFrequencyPage();
     syncModeButtonWidths();
     syncTopControlsLayout();
+    scheduleDecorativeSharedSeamRectRender();
   });
+  if (boardResizeObserver) {
+    boardResizeObserver.disconnect();
+    boardResizeObserver = null;
+  }
+  if (typeof ResizeObserver === "function") {
+    boardResizeObserver = new ResizeObserver(() => {
+      scheduleDecorativeSharedSeamRectRender();
+    });
+    boardResizeObserver.observe(boardEl);
+  }
 
   syncTopControlsLayout();
   syncTopControlActiveStates();

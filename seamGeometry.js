@@ -12,13 +12,19 @@ export function buildDecorativeSeams({
   hexWidth,
   hexHeight,
   rowStep,
+  colStep = hexWidth,
   seamSpillPx = 0,
 }) {
   if (!(decorativeTilesByCoordinate instanceof Map)) return [];
-  if (!Number.isFinite(hexWidth) || !Number.isFinite(hexHeight) || !Number.isFinite(rowStep)) {
+  if (
+    !Number.isFinite(hexWidth) ||
+    !Number.isFinite(hexHeight) ||
+    !Number.isFinite(rowStep) ||
+    !Number.isFinite(colStep)
+  ) {
     return [];
   }
-  if (hexWidth <= 0 || hexHeight <= 0 || rowStep <= 0) return [];
+  if (hexWidth <= 0 || hexHeight <= 0 || rowStep <= 0 || colStep <= 0) return [];
 
   const sideLength = hexWidth / Math.sqrt(3);
   const seams = [];
@@ -37,9 +43,9 @@ export function buildDecorativeSeams({
       const isCanonicalOwner = row < neighborRow || (row === neighborRow && x < neighborX);
       if (!isCanonicalOwner) return;
 
-      const centerAX = hexWidth * renderX + hexWidth / 2;
+      const centerAX = colStep * renderX + hexWidth / 2;
       const centerAY = rowStep * row + hexHeight / 2;
-      const centerBX = hexWidth * neighborData.renderX + hexWidth / 2;
+      const centerBX = colStep * neighborData.renderX + hexWidth / 2;
       const centerBY = rowStep * neighborData.row + hexHeight / 2;
 
       seams.push({
@@ -53,4 +59,3 @@ export function buildDecorativeSeams({
 
   return seams;
 }
-

@@ -653,12 +653,12 @@ button:focus-visible,
 .board {
   margin: 20px auto;
   --board-target-h: 50dvh;
-  --board-effective-row-count: var(--board-row-count, 6);
+  --board-effective-row-count: var(--board-stack-row-count, 6);
   --board-row-height-units: calc(
     1.154700538 + (var(--board-effective-row-count, 6) - 1) * 0.866025404
   );
-  --hex-tighten-x: 1px;
-  --hex-tighten-y: 1px;
+  --hex-tighten-x: 0px;
+  --hex-tighten-y: 0px;
   --board-width-limited-hex-w: calc(
     ((100vw - 40px) + (var(--board-stack-x-span, 8) - 1) * var(--hex-tighten-x)) /
       var(--board-stack-x-span, 8)
@@ -675,6 +675,9 @@ button:focus-visible,
   --hex-row-step: calc(var(--hex-h) * 0.75);
   --hex-col-step-tight: calc(var(--hex-w) - var(--hex-tighten-x));
   --hex-row-step-tight: calc(var(--hex-row-step) - var(--hex-tighten-y));
+  --decorative-junction-dot-size-ratio: 0.08;
+  --decorative-shared-seam-width-ratio: 0.54;
+  --decorative-shared-seam-spill-ratio: 0.5;
   --board-col-offset: calc(
     (var(--board-stack-x-span, 8) - var(--board-x-span, 8)) * var(--hex-col-step-tight) / 2
   );
@@ -689,7 +692,7 @@ button:focus-visible,
 .tile {
   --tile-fill: var(--tile);
   --tile-stroke: var(--tile-border);
-  --tile-stroke-width: 4;
+  --tile-stroke-width: 3;
   border: 0;
   background: transparent;
   color: var(--ink);
@@ -729,7 +732,7 @@ button:focus-visible,
   --tile-stroke: var(--panel);
   --tile-stroke-width: 0;
   --tile-outer-edge-stroke: var(--panel);
-  --tile-outer-edge-stroke-width: 3;
+  --tile-outer-edge-stroke-width: 2.5;
   --tile-shared-seam-stroke-width: 0;
 }
 
@@ -779,6 +782,33 @@ button:focus-visible,
 
 .tile-shared-seam-edge.is-visible {
   opacity: 1;
+}
+
+.decorative-shared-seam-rect {
+  position: absolute;
+  left: var(--seam-center-x, 0px);
+  top: var(--seam-center-y, 0px);
+  width: calc(var(--hex-w) * 0.55);
+  height: var(--seam-length, 0px);
+  background: var(--gold);
+  border-radius: 0;
+  pointer-events: none;
+  z-index: 2.8;
+  transform: translate(-50%, -50%) rotate(var(--seam-angle, 0deg));
+  transform-origin: center;
+}
+
+.decorative-junction-dot {
+  position: absolute;
+  left: var(--junction-dot-x, 0px);
+  top: var(--junction-dot-y, 0px);
+  width: var(--junction-dot-size, 6px);
+  height: var(--junction-dot-size, 6px);
+  background: var(--gold);
+  border-radius: 999px;
+  pointer-events: none;
+  z-index: 2.9;
+  transform: translate(-50%, -50%);
 }
 
 .tile-face-eye,
@@ -961,7 +991,7 @@ button:focus-visible,
   gap: 6px;
   align-items: flex-start;
   padding: 0;
-  border-radius: 0 0 18px 18px;
+  border-radius: 0 0 0px 0px;
   background: var(--tab);
 }
 
@@ -969,7 +999,7 @@ button:focus-visible,
   min-width: 0;
   flex: 1 1 0;
   border: 0;
-  border-radius: 0 0 14px 14px;
+  border-radius: 0 0 8px 8px;
   height: 42px;
   padding: 0 14px;
   display: inline-flex;
@@ -1587,10 +1617,29 @@ button:focus-visible,
   --decor-col-step: calc(var(--decor-tile-width) - 1px);
   --decor-row-step: calc(var(--decor-tile-width) * 0.8660254038);
   --decor-top-offset: 14%;
+  --decor-left-pivot-x: calc(50% + (-2 * var(--decor-col-step)));
+  --decor-right-pivot-x: calc(50% + (2 * var(--decor-col-step)));
+  --decor-pivot-y: calc(var(--decor-top-offset) + (3 * var(--decor-row-step)));
   position: absolute;
   inset: -6%;
   z-index: 4;
   pointer-events: none;
+}
+
+.daily-outcome-decor-wing {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transform: rotate(0deg);
+  transition: transform 240ms ease-out;
+}
+
+.daily-outcome-decor-wing-left {
+  transform-origin: var(--decor-left-pivot-x) var(--decor-pivot-y);
+}
+
+.daily-outcome-decor-wing-right {
+  transform-origin: var(--decor-right-pivot-x) var(--decor-pivot-y);
 }
 
 .daily-outcome-decor-tile {
@@ -1604,8 +1653,18 @@ button:focus-visible,
   align-items: center;
   justify-content: center;
   transform: translate(-50%, -50%);
+  cursor: pointer;
+  pointer-events: auto;
   -webkit-clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
   clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+}
+
+.daily-outcome-card.daily-outcome-decor-flap .daily-outcome-decor-wing-left {
+  transform: rotate(-30deg);
+}
+
+.daily-outcome-card.daily-outcome-decor-flap .daily-outcome-decor-wing-right {
+  transform: rotate(30deg);
 }
 
 .daily-outcome-decor-tile-decor {
@@ -2336,12 +2395,6 @@ button:focus-visible,
 
   .daily-outcome-actions .mode-option-button {
     flex: 0 0 auto;
-  }
-}
-
-@media (max-width: 850px) {
-  .board {
-    --board-effective-row-count: var(--board-stack-row-count, 6);
   }
 }
 
