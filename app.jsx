@@ -1,10 +1,10 @@
 import { useEffect } from "react";
 import { initGame } from "./script.js";
 import { buildPlacedMap, HEX_GEOMETRY, mapDefinitions } from "./mapLayouts.js";
-import lightbulbIcon from "./lightbulb.svg";
-import mineIcon from "./mine.svg";
-import flagIcon from "./flag.svg";
-import shuffleIcon from "./shuffle.svg";
+import lightbulbIcon from "./Icons/lightbulb.svg";
+import mineIcon from "./Icons/mine.svg";
+import flagIcon from "./Icons/flag.svg";
+import shuffleIcon from "./Icons/Shuffle.svg";
 
 const SHUFFLE_MAP_ID = "shuffle";
 const LETTER_FREQUENCIES = [
@@ -111,6 +111,36 @@ const BONUS_MAP_OPTIONS = MAP_OPTIONS.filter(
 );
 const [STANDARD_ROW_1, STANDARD_ROW_2] = splitIntoTwoRows(STANDARD_MAP_OPTIONS);
 const [BONUS_ROW_1, BONUS_ROW_2] = splitIntoTwoRows(BONUS_MAP_OPTIONS);
+const DAILY_OUTCOME_DECOR_ROWS = ["GG", "G", "DGGGGD", "DGGGD", "GG", "ESE"];
+const DAILY_OUTCOME_DECOR_MAX_WIDTH = Math.max(
+  ...DAILY_OUTCOME_DECOR_ROWS.map((row) => row.length),
+);
+const DAILY_OUTCOME_DECOR_CENTER_X = (DAILY_OUTCOME_DECOR_MAX_WIDTH - 1) / 2;
+const DAILY_OUTCOME_DECOR_TILES = DAILY_OUTCOME_DECOR_ROWS.flatMap(
+  (rowSpec, rowIndex) => {
+    const row = String(rowSpec || "").toUpperCase();
+    const rowStart = (DAILY_OUTCOME_DECOR_MAX_WIDTH - row.length) / 2;
+    return row.split("").flatMap((token, columnIndex) => {
+      if (token === "G" || token === ".") return [];
+      const x = rowStart + columnIndex - DAILY_OUTCOME_DECOR_CENTER_X;
+      const variantClassName =
+        token === "E" || token === "S"
+          ? "daily-outcome-decor-tile-face"
+          : "daily-outcome-decor-tile-decor";
+      return [
+        {
+          key: `daily-decor-${rowIndex}-${columnIndex}-${token}`,
+          token,
+          variantClassName,
+          style: {
+            "--decor-x": String(x),
+            "--decor-row": String(rowIndex),
+          },
+        },
+      ];
+    });
+  },
+);
 
 function getPreviewHexPoints(centerX, centerY) {
   return [
@@ -280,20 +310,11 @@ export default function App() {
           <p>
             <strong>Space</strong>: shuffle letter bank
           </p>
+          <p>
+            <strong>Enter</strong>: submit guess
+          </p>
           <p id="legend-shift-n-new-game" className="hidden">
             <strong>Shift-N</strong>: new game
-          </p>
-          <p>
-            <strong>Shift-H</strong>: toggle help
-          </p>
-          <p>
-            <strong>Shift-L</strong>: toggle levels
-          </p>
-          <p>
-            <strong>Shift-S</strong>: toggle stats
-          </p>
-          <p>
-            <strong>Shift-A</strong>: toggle letter frequency
           </p>
         </div>
         <div id="unscramble" className="unscramble">
@@ -449,7 +470,7 @@ export default function App() {
                 in the letter bank.
               </p>
               <p>Rearrange the flagged letters to find the answer.</p>
-              <p>Press [ENTER] to submit!</p>
+              <p>Press ENTER to submit!</p>
               <div aria-hidden="true" style={{ height: "13px" }} />
 
               <h3>Tips</h3>
@@ -458,8 +479,8 @@ export default function App() {
                 Clicking on uncommon letters is a useful but risky way to reveal
                 more of the map.
               </p>
-              <p>[SPACE] shuffles the letter bank.</p>
-              <p>There's no timer - so bee yourself and have fun!</p>
+              <p>SPACE shuffles the letter bank.</p>
+              <p>There's no timer. Just bee yourself and have fun!</p>
             </div>
           </div>
           <div className="game-actions help-actions">
@@ -495,8 +516,8 @@ export default function App() {
             Letter Frequency
           </h2>
           <p className="frequency-note">
-            Clicking on uncommon letters can bee a good strategy... or a risky
-            one!
+            (Clicking on uncommon letters can be a good strategy... or a risky
+            one!)
           </p>
           <div className="frequency-pages">
             <div className="frequency-page" data-frequency-page="alphabetical">
@@ -891,77 +912,91 @@ export default function App() {
         aria-labelledby="daily-outcome-title"
         aria-hidden="true"
       >
-        <div className="popup-card daily-outcome-card">
-          <button
-            id="daily-outcome-close"
-            className="popup-close daily-outcome-close"
-            type="button"
-            aria-label="Close Daily Bee outcome"
-          >
-            &times;
-          </button>
-          <h2
-            id="daily-outcome-title"
-            className="help-title daily-outcome-title daily-outcome-title-win"
-          >
-            YOU WIN!
-          </h2>
-          <div className="daily-outcome-spacer" aria-hidden="true" />
-          <p id="daily-outcome-summary" className="daily-stat-label">
-            You solved today&apos;s puzzle in [hint] hints, making you a
-          </p>
-          <div className="daily-outcome-spacer" aria-hidden="true" />
-          <p id="daily-outcome-rank" className="daily-stat-value">
-            [RANK] BEE
-          </p>
-          <div className="daily-outcome-spacer" aria-hidden="true" />
-          <p className="prestart-prompt">SHARE</p>
-          <div className="daily-outcome-spacer" aria-hidden="true" />
-          <div className="daily-outcome-share-row">
-            <div className="daily-outcome-share-option">
-              <button
-                id="daily-outcome-copy"
-                className="daily-outcome-clipboard-button"
-                type="button"
-                aria-label="Copy Daily Bee result"
+        <div id="daily-outcome-card" className="popup-card daily-outcome-card">
+          <div className="daily-outcome-decor" aria-hidden="true">
+            {DAILY_OUTCOME_DECOR_TILES.map((tile) => (
+              <span
+                key={tile.key}
+                className={`daily-outcome-decor-tile ${tile.variantClassName}`}
+                style={tile.style}
               >
-                <span
-                  className="daily-outcome-clipboard-icon"
-                  aria-hidden="true"
-                />
-              </button>
-              <p className="daily-outcome-share-subtitle">Copy/Paste</p>
-            </div>
-            <div className="daily-outcome-share-option">
-              <button
-                id="daily-outcome-sms"
-                className="daily-outcome-sms-button"
-                type="button"
-                aria-label="Share Daily Bee result by SMS"
-              >
-                <span className="daily-outcome-sms-icon" aria-hidden="true">
-                  SMS
-                </span>
-              </button>
-              <p className="daily-outcome-share-subtitle">SMS</p>
-            </div>
+                {tile.token === "E" ? (
+                  <span className="daily-outcome-face-eye" />
+                ) : null}
+                {tile.token === "S" ? (
+                  <span className="daily-outcome-face-smile">)</span>
+                ) : null}
+              </span>
+            ))}
           </div>
-          <div className="daily-outcome-spacer" aria-hidden="true" />
-          <div className="game-actions daily-outcome-actions">
+          <div className="daily-outcome-core">
             <button
-              id="daily-outcome-close-window"
-              className="mode-option-button"
+              id="daily-outcome-close"
+              className="popup-close daily-outcome-close"
               type="button"
+              aria-label="Close Daily Bee outcome"
             >
-              CLOSE WINDOW
+              &times;
             </button>
-            <button
-              id="daily-outcome-play-endless"
-              className="mode-option-button mode-button-active"
-              type="button"
+            <h2
+              id="daily-outcome-title"
+              className="help-title daily-outcome-title daily-outcome-title-win"
             >
-              PLAY ENDLESS
-            </button>
+              YOU WIN!
+            </h2>
+            <div className="daily-outcome-spacer" aria-hidden="true" />
+            <p id="daily-outcome-summary" className="daily-stat-label">
+              You solved today&apos;s puzzle in [hint] hints, making you a
+            </p>
+            <div className="daily-outcome-spacer" aria-hidden="true" />
+            <p
+              id="daily-outcome-rank"
+              className="daily-stat-value daily-outcome-rank-pill"
+            >
+              [RANK] BEE
+            </p>
+            <div className="daily-outcome-spacer" aria-hidden="true" />
+            <p className="prestart-prompt">SHARE</p>
+            <div className="daily-outcome-spacer" aria-hidden="true" />
+            <div className="daily-outcome-share-row">
+              <div className="daily-outcome-share-option">
+                <button
+                  id="daily-outcome-copy"
+                  className="daily-outcome-clipboard-button"
+                  type="button"
+                  aria-label="Copy Daily Bee result"
+                >
+                  <span
+                    className="daily-outcome-clipboard-icon"
+                    aria-hidden="true"
+                  />
+                </button>
+                <p className="daily-outcome-share-subtitle">Copy/Paste</p>
+              </div>
+              <div className="daily-outcome-share-option">
+                <button
+                  id="daily-outcome-sms"
+                  className="daily-outcome-sms-button"
+                  type="button"
+                  aria-label="Share Daily Bee result by SMS"
+                >
+                  <span className="daily-outcome-sms-icon" aria-hidden="true">
+                    SMS
+                  </span>
+                </button>
+                <p className="daily-outcome-share-subtitle">SMS</p>
+              </div>
+            </div>
+            <div className="daily-outcome-spacer" aria-hidden="true" />
+            <div className="game-actions daily-outcome-actions">
+              <button
+                id="daily-outcome-play-endless"
+                className="mode-option-button mode-button-active"
+                type="button"
+              >
+                PLAY ENDLESS
+              </button>
+            </div>
           </div>
         </div>
       </section>

@@ -260,13 +260,13 @@ let helpModalEl = null;
 let helpCloseBtn = null;
 let helpCloseWindowBtn = null;
 let dailyOutcomeModalEl = null;
+let dailyOutcomeCardEl = null;
 let dailyOutcomeCloseBtn = null;
 let dailyOutcomeTitleEl = null;
 let dailyOutcomeSummaryEl = null;
 let dailyOutcomeRankEl = null;
 let dailyOutcomeCopyBtn = null;
 let dailyOutcomeSmsBtn = null;
-let dailyOutcomeCloseWindowBtn = null;
 let dailyOutcomePlayEndlessBtn = null;
 let legendShiftNNewGameEl = null;
 let frequencyOpenBtn = null;
@@ -313,6 +313,7 @@ let beeEyesTimer = null;
 let beePressTimer = null;
 let dailyPersistTimer = null;
 let ignoreNextReplayClick = false;
+let replayClickGuardTimer = null;
 let dailyRecord = null;
 let mapStatsRecord = null;
 const STANDARD_MAP_DEFINITIONS = mapDefinitions.filter((entry) => entry.category !== PAGE_BONUS);
@@ -340,8 +341,22 @@ function getPlayableWordLength(word) {
   return getPlayableWordLetters(word).length;
 }
 
+const VISIBLE_WORD_SEPARATORS = new Set([
+  " ",
+  "-",
+  "–",
+  "—",
+  "'",
+  "’",
+  "\"",
+  "“",
+  "”",
+  "&",
+  ".",
+]);
+
 function isVisibleWordSeparator(character) {
-  return character === " " || character === "-";
+  return VISIBLE_WORD_SEPARATORS.has(character);
 }
 
 const ELIGIBLE_LEVELS = LEVEL_ENTRIES.filter(
@@ -1545,7 +1560,7 @@ function renderWordSlots(secretWord, guessValue = "", revealState = null) {
     : String(guessValue || "")
         .toUpperCase()
         .split("");
-  const displayCharacters = String(secretWord || "").toUpperCase().split("");
+  const displayCharacters = String(secretWord || "").split("");
   const hintedIndexes = game?.hintedIndexes instanceof Set ? game.hintedIndexes : new Set();
   let playableIndex = 0;
 
@@ -1678,18 +1693,51 @@ function getDailyBeeRank(hintCount) {
 }
 
 function updateDailyOutcomeContent(result) {
-  if (!dailyOutcomeTitleEl || !dailyOutcomeSummaryEl || !dailyOutcomeRankEl) return;
-  const hintCount = Math.max(0, toFiniteNumber(game?.hintsUsed));
+  if (!dailyOutcomeCardEl || !dailyOutcomeTitleEl || !dailyOutcomeSummaryEl || !dailyOutcomeRankEl) {
+    return;
+  }
+  const rankToneClasses = [
+    "daily-outcome-rank-killer",
+    "daily-outcome-rank-honey",
+    "daily-outcome-rank-bumble",
+    "daily-outcome-rank-fumble",
+  ];
+  const hintCount = Math.max(0, Math.floor(toFiniteNumber(game?.hintsUsed)));
   const hintLabel = hintCount === 1 ? "hint" : "hints";
   const isWin = result === "won";
+  const rankLabel = isWin ? `${getDailyBeeRank(hintCount)} BEE` : "FUMBLE BEE";
 
+  dailyOutcomeCardEl.classList.toggle("daily-outcome-expression-win", isWin);
+  dailyOutcomeCardEl.classList.toggle("daily-outcome-expression-loss", !isWin);
   dailyOutcomeTitleEl.textContent = isWin ? "YOU WIN!" : "UH OH!";
   dailyOutcomeTitleEl.classList.toggle("daily-outcome-title-win", isWin);
   dailyOutcomeTitleEl.classList.toggle("daily-outcome-title-loss", !isWin);
-  dailyOutcomeSummaryEl.textContent = isWin
-    ? `You solved today's puzzle in ${hintCount} ${hintLabel}, making you a`
-    : "Better luck tomorrow! You've earned the rank of:";
-  dailyOutcomeRankEl.textContent = isWin ? `${getDailyBeeRank(hintCount)} BEE` : "FUMBLE BEE";
+  if (isWin) {
+    const hintCountEl = document.createElement("strong");
+    hintCountEl.className = "daily-outcome-hint-count";
+    hintCountEl.textContent = String(hintCount);
+    const lineBreakEl = document.createElement("br");
+    dailyOutcomeSummaryEl.replaceChildren(
+      document.createTextNode("You solved today's puzzle in "),
+      hintCountEl,
+      document.createTextNode(` ${hintLabel},`),
+      lineBreakEl,
+      document.createTextNode("making you a"),
+    );
+  } else {
+    dailyOutcomeSummaryEl.textContent = "Better luck tomorrow! You've earned the rank of:";
+  }
+  dailyOutcomeRankEl.textContent = rankLabel;
+  dailyOutcomeRankEl.classList.remove(...rankToneClasses);
+  if (rankLabel.startsWith("KILLER")) {
+    dailyOutcomeRankEl.classList.add("daily-outcome-rank-killer");
+  } else if (rankLabel.startsWith("HONEY")) {
+    dailyOutcomeRankEl.classList.add("daily-outcome-rank-honey");
+  } else if (rankLabel.startsWith("BUMBLE")) {
+    dailyOutcomeRankEl.classList.add("daily-outcome-rank-bumble");
+  } else {
+    dailyOutcomeRankEl.classList.add("daily-outcome-rank-fumble");
+  }
 }
 
 function updateHintButtonState() {
@@ -1979,6 +2027,9 @@ function syncModeButtonWidths() {
   if (!newGameBtn || !dailyBeeBtn) return;
   newGameBtn.style.width = "";
   dailyBeeBtn.style.width = "";
+  if (typeof window !== "undefined" && window.innerWidth <= 300) {
+    return;
+  }
   const maxWidth = Math.max(newGameBtn.offsetWidth, dailyBeeBtn.offsetWidth);
   if (maxWidth <= 0) return;
   const syncedWidth = `${Math.ceil(maxWidth)}px`;
@@ -2111,6 +2162,10 @@ function initializeWordAfterFirstClick(firstRevealIndex) {
 
 function startGame(requestedMode = null, options = {}) {
   clearDailyPersistTimer();
+  if (replayClickGuardTimer) {
+    clearTimeout(replayClickGuardTimer);
+    replayClickGuardTimer = null;
+  }
   ignoreNextReplayClick = false;
   closeDailyOutcome();
   const mode =
@@ -2205,6 +2260,13 @@ function setGameOver(message, result = null, useCategoryLabel = false) {
   }
   if (result === "won" || result === "lost") {
     ignoreNextReplayClick = true;
+    if (replayClickGuardTimer) {
+      clearTimeout(replayClickGuardTimer);
+    }
+    replayClickGuardTimer = setTimeout(() => {
+      ignoreNextReplayClick = false;
+      replayClickGuardTimer = null;
+    }, 0);
   }
   if (result === "lost") {
     boardEl.classList.add("bee-dead");
@@ -2498,6 +2560,13 @@ function handleShiftCommand(event) {
     event.beeShiftCommandHandled = true;
     writeDailyRecordToStorage(null);
     startGame(GAME_MODE_DAILY, { forcedMapId: chooseDailyMapId() });
+    return true;
+  }
+
+  if (isShiftOptionCommand && (code === "KeyO" || key === "o")) {
+    event.preventDefault();
+    event.beeShiftCommandHandled = true;
+    openDailyOutcome("won");
     return true;
   }
 
@@ -2963,13 +3032,6 @@ function onDailyOutcomeModalClick(event) {
   }
 }
 
-function onDailyOutcomeCloseWindowClick() {
-  closeDailyOutcome();
-  if (typeof window !== "undefined" && typeof window.close === "function") {
-    window.close();
-  }
-}
-
 function onDailyOutcomePlayEndlessClick() {
   closeDailyOutcome();
   switchToEndlessMode();
@@ -3012,7 +3074,13 @@ function onGlobalClick(event) {
   if (!game) return;
   const targetIsElement = event.target instanceof Element;
   const clickOnActiveTile = targetIsElement && Boolean(event.target.closest(".tile[data-index]"));
-  const clickInBoard = targetIsElement && Boolean(boardEl?.contains(event.target));
+  const clickOnInteractiveControl =
+    targetIsElement &&
+    Boolean(
+      event.target.closest(
+        "button, [role='button'], a[href], input, select, textarea, label"
+      )
+    );
   if (isHelpOpen() || isHexOpen() || isFrequencyOpen() || isStatsOpen() || isDevOpen() || isDailyOutcomeOpen()) return;
   if (
     helpModalEl?.contains(event.target) ||
@@ -3029,7 +3097,7 @@ function onGlobalClick(event) {
     return;
   }
   if (game.over) {
-    if (!clickInBoard) return;
+    if (clickOnInteractiveControl) return;
     if (!game.secretWord) return;
     if (game.mode === GAME_MODE_DAILY) return;
     const completedResult = game.outcome?.result;
@@ -3039,7 +3107,6 @@ function onGlobalClick(event) {
       return;
     }
     if (ignoreNextReplayClick) {
-      ignoreNextReplayClick = false;
       return;
     }
     startGame();
@@ -3180,13 +3247,13 @@ export function initGame() {
   helpCloseBtn = document.getElementById("help-close");
   helpCloseWindowBtn = document.getElementById("help-close-window");
   dailyOutcomeModalEl = document.getElementById("daily-outcome-modal");
+  dailyOutcomeCardEl = document.getElementById("daily-outcome-card");
   dailyOutcomeCloseBtn = document.getElementById("daily-outcome-close");
   dailyOutcomeTitleEl = document.getElementById("daily-outcome-title");
   dailyOutcomeSummaryEl = document.getElementById("daily-outcome-summary");
   dailyOutcomeRankEl = document.getElementById("daily-outcome-rank");
   dailyOutcomeCopyBtn = document.getElementById("daily-outcome-copy");
   dailyOutcomeSmsBtn = document.getElementById("daily-outcome-sms");
-  dailyOutcomeCloseWindowBtn = document.getElementById("daily-outcome-close-window");
   dailyOutcomePlayEndlessBtn = document.getElementById("daily-outcome-play-endless");
   legendShiftNNewGameEl = document.getElementById("legend-shift-n-new-game");
   frequencyOpenBtn = document.getElementById("frequency-open");
@@ -3249,13 +3316,13 @@ export function initGame() {
     !helpCloseBtn ||
     !helpCloseWindowBtn ||
     !dailyOutcomeModalEl ||
+    !dailyOutcomeCardEl ||
     !dailyOutcomeCloseBtn ||
     !dailyOutcomeTitleEl ||
     !dailyOutcomeSummaryEl ||
     !dailyOutcomeRankEl ||
     !dailyOutcomeCopyBtn ||
     !dailyOutcomeSmsBtn ||
-    !dailyOutcomeCloseWindowBtn ||
     !dailyOutcomePlayEndlessBtn ||
     !frequencyOpenBtn ||
     !frequencyModalEl ||
@@ -3303,7 +3370,6 @@ export function initGame() {
   dailyOutcomeModalEl.addEventListener("click", onDailyOutcomeModalClick);
   dailyOutcomeCopyBtn.addEventListener("click", onDailyOutcomeCopyClick);
   dailyOutcomeSmsBtn.addEventListener("click", onDailyOutcomeSmsClick);
-  dailyOutcomeCloseWindowBtn.addEventListener("click", onDailyOutcomeCloseWindowClick);
   dailyOutcomePlayEndlessBtn.addEventListener("click", onDailyOutcomePlayEndlessClick);
   frequencyOpenBtn.addEventListener("click", openFrequency);
   frequencyCloseBtn.addEventListener("click", closeFrequency);
