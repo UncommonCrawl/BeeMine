@@ -1,0 +1,52 @@
+# Tells GitHub what this robot does
+name: Deploy Game to GitHub Pages
+
+on:
+  # Tells the robot to wake up every time you push to the master branch
+  push:
+    branches: ["master"]
+  workflow_dispatch:
+
+# Gives the robot permission to edit your live website
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout your code
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install your project dependencies
+        run: npm install
+
+      - name: Compile the Vite game into playable files
+        run: npm run build
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload the finished game
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "./dist"
+
+      - name: Push the game live!
+        id: deployment
+        uses: actions/deploy-pages@v4
