@@ -2618,6 +2618,11 @@ function handleShiftCommand(event) {
   }
 
   if (key === "n") {
+    if (game?.mode === GAME_MODE_DAILY) {
+      event.preventDefault();
+      event.beeShiftCommandHandled = true;
+      return true;
+    }
     if (game?.mode !== GAME_MODE_NORMAL) return false;
     event.preventDefault();
     event.beeShiftCommandHandled = true;
@@ -3169,6 +3174,9 @@ function onGlobalKeyDown(event) {
   }
 
   if (game && !game.over && !game.secretWord && event.key === "Enter") {
+    if (game.mode === GAME_MODE_DAILY) {
+      return;
+    }
     event.preventDefault();
     startGame();
     return;
